@@ -81,6 +81,10 @@ export default function PracticePage() {
     }
   }, [userInput, currentText]);
 
+  const handlePaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
+    e.preventDefault();
+  };
+
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (!isStarted && e.key !== 'Tab') {
       startTyping();
@@ -378,6 +382,7 @@ export default function PracticePage() {
           value={userInput}
           onChange={handleInputChange}
           onKeyDown={handleKeyDown}
+          onPaste={handlePaste}
           disabled={isFinished}
           className="absolute opacity-0 w-0 h-0"
           autoFocus

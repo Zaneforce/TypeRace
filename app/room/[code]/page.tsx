@@ -137,6 +137,10 @@ export default function RoomPage({ params }: { params: { code: string } }) {
     }
   }, [room?.status]);
 
+  const handlePaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
+    e.preventDefault();
+  };
+
   const handleKeyDown = async (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (!room || !user) return;
 
@@ -374,6 +378,7 @@ export default function RoomPage({ params }: { params: { code: string } }) {
               value={userInput}
               onChange={handleInputChange}
               onKeyDown={handleKeyDown}
+              onPaste={handlePaste}
               disabled={room?.players[user?.uid || '']?.isFinished}
               className="w-full bg-transparent text-transparent caret-transparent outline-none border-none"
               style={{

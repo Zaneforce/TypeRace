@@ -114,6 +114,10 @@ export default function PublicRoomPage() {
     }
   }, [userInput, currentRoom]);
 
+  const handlePaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
+    e.preventDefault();
+  };
+
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (!isStarted && e.key !== 'Tab') {
       setIsStarted(true);
@@ -268,6 +272,7 @@ export default function PublicRoomPage() {
             value={userInput}
             onChange={handleInputChange}
             onKeyDown={handleKeyDown}
+            onPaste={handlePaste}
             disabled={currentPlayer?.isFinished}
             className="w-full bg-transparent text-transparent caret-transparent outline-none border-none"
             style={{
