@@ -230,10 +230,11 @@ export default function PublicRoomPage() {
         </div>
       </div>
 
-      <div className="max-w-7xl mx-auto px-8 py-12">
-        {/* Stats */}
-        <div className="max-w-4xl mx-auto mb-8">
-          <div className="grid grid-cols-3 gap-4">
+      <div className="max-w-7xl mx-auto px-8 py-6 grid lg:grid-cols-4 gap-6">
+        {/* Main Content */}
+        <div className="lg:col-span-3">
+          {/* Stats */}
+          <div className="grid grid-cols-3 gap-4 mb-8">
             <div className="bg-gray-800/50 p-4 rounded-lg border border-gray-700/50">
               <div className="text-gray-500 text-xs mb-1">wpm</div>
               <div className="text-yellow-500 text-3xl font-bold">{wpm}</div>
@@ -245,23 +246,23 @@ export default function PublicRoomPage() {
             <div className="bg-gray-800/50 p-4 rounded-lg border border-gray-700/50">
               <div className="text-gray-500 text-xs mb-1">progress</div>
               <div className="text-yellow-500 text-3xl font-bold">
-                {userInput.length}/{currentRoom?.text.length || 0}
+                {Math.floor((userInput.length / (currentRoom?.text.length || 1)) * 100)}%
               </div>
             </div>
           </div>
-        </div>
 
-        {/* Text Display */}
-        <div className="mb-8">
-          {!isStarted && (
-            <div className="text-center mb-6 text-gray-600 text-sm animate-pulse">
-              Start typing to begin...
-            </div>
-          )}
-          
-          <div 
-            className="text-left leading-relaxed px-4 max-w-4xl mx-auto overflow-hidden"
-            style={{ 
+          {/* Text Display */}
+          <div className="mb-8">
+            {!isStarted && (
+              <div className="text-center mb-6 text-gray-600 text-sm animate-pulse">
+                Start typing to begin...
+              </div>
+            )}
+            
+            <div 
+              className="text-left leading-relaxed px-4 max-w-4xl mx-auto overflow-hidden cursor-text"
+              onClick={() => inputRef.current?.focus()}
+              style={{ 
               fontSize: '2rem',
               letterSpacing: '0.02em',
               wordSpacing: '0.5em',
@@ -293,60 +294,69 @@ export default function PublicRoomPage() {
             className="w-full bg-transparent text-transparent caret-transparent outline-none border-none"
             style={{
               position: 'absolute',
-              opacity: 0,
-              pointerEvents: 'none'
+              left: '-9999px'
             }}
             autoFocus
           />
         </div>
 
-        {/* Leaderboard */}
-        <div className="max-w-4xl mx-auto mt-12">
-          <div className="bg-gray-800/50 backdrop-blur-md p-6 rounded-xl border border-gray-700/50">
-            <h2 className="text-xl font-bold text-yellow-500 mb-4 flex items-center gap-2">
-              <FontAwesomeIcon icon={faTrophy} />
-              <span>Leaderboard</span>
-            </h2>
-            <div className="space-y-2">
-              {sortedPlayers.map((player, index) => (
-                <div
-                  key={player.id}
-                  className={`p-3 rounded-lg flex items-center justify-between ${
-                    player.id === currentPlayer?.id
-                      ? 'bg-yellow-500/20 border border-yellow-500/50'
-                      : 'bg-gray-700/30'
-                  }`}
-                >
-                  <div className="flex items-center gap-3">
-                    <span className="text-gray-500 font-mono text-sm w-6">
+        {/* Virtual Keyboard */}
+        <VirtualKeyboard pressedKey={pressedKey} showKeyboard={true} />
+      </div>
+
+      {/* Leaderboard Sidebar */}
+      <div className="lg:col-span-1">
+        <div className="bg-gray-800/30 rounded-lg border border-gray-700/50 p-6 sticky top-24">
+          <h3 className="text-yellow-500 text-lg font-bold mb-4 flex items-center gap-2">
+            <FontAwesomeIcon icon={faTrophy} /> Leaderboard
+          </h3>
+          <div className="space-y-3">
+            {sortedPlayers.map((player, index) => (
+              <div
+                key={player.id}
+                className={`p-3 rounded-lg transition-all ${
+                  player.id === currentPlayer?.id
+                    ? 'bg-yellow-500/20 border border-yellow-500/50'
+                    : 'bg-gray-700/30 border border-gray-700/50'
+                }`}
+              >
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <span className={`text-xs font-bold ${
+                      player.id === currentPlayer?.id ? 'text-yellow-500' : 'text-gray-500'
+                    }`}>
                       #{index + 1}
                     </span>
-                    <span className={`font-medium ${
-                      player.id === currentPlayer?.id ? 'text-yellow-500' : 'text-gray-300'
-                    }`}>
+                    <span className="text-gray-300 font-medium text-sm">
                       {player.name}
                     </span>
                   </div>
-                  <div className="flex items-center gap-4 text-sm">
-                    <span className="text-gray-500">
-                      {player.wpm} <span className="text-gray-600">wpm</span>
-                    </span>
-                    <span className="text-gray-500">
-                      {Math.floor(player.progress)}%
-                    </span>
-                    {player.isFinished && (
-                      <FontAwesomeIcon icon={faCheckCircle} className="text-green-500" />
-                    )}
-                  </div>
+                  {player.isFinished && (
+                    <FontAwesomeIcon icon={faCheckCircle} className="text-green-500 text-sm" />
+                  )}
                 </div>
-              ))}
-            </div>
+                
+                <div className="flex justify-between text-xs text-gray-500 mb-2">
+                  <span>{player.wpm} wpm</span>
+                  <span>{Math.floor(player.progress)}%</span>
+                </div>
+                
+                <div className="w-full bg-gray-600 rounded-full h-1.5">
+                  <div
+                    className={`h-1.5 rounded-full transition-all duration-300 ${
+                      player.id === currentPlayer?.id
+                        ? 'bg-gradient-to-r from-yellow-500 to-yellow-600'
+                        : 'bg-gradient-to-r from-gray-500 to-gray-600'
+                    }`}
+                    style={{ width: `${player.progress}%` }}
+                  />
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       </div>
-
-      {/* Virtual Keyboard */}
-      <VirtualKeyboard pressedKey={pressedKey} nextKey={nextKey} showKeyboard={true} />
+    </div>
     </main>
   );
 }
