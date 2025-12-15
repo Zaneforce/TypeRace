@@ -341,7 +341,7 @@ export default function PublicRoomPage() {
           </div>
 
           {/* Text Display */}
-          <div className="mb-8">
+          <div className="mb-8 mt-16">
             {room.status === 'waiting' && (
               <div className="text-center mb-6 text-gray-600 text-sm animate-pulse">
                 Waiting for players... Start typing to begin!
@@ -349,7 +349,7 @@ export default function PublicRoomPage() {
             )}
             
             <div 
-              className="text-left leading-relaxed px-4 max-w-4xl mx-auto overflow-hidden"
+              className="text-left leading-relaxed px-4 max-w-4xl mx-auto overflow-hidden cursor-text"
               onClick={() => inputRef.current?.focus()}
               style={{ 
                 fontSize: '2rem',
@@ -390,78 +390,63 @@ export default function PublicRoomPage() {
             />
           </div>
 
-          {/* Personal Stats */}
-          {currentPlayer && (
-            <div className="max-w-4xl mx-auto mb-8">
-              <div className="flex items-center justify-center gap-8 text-sm">
-                <div className="flex items-center gap-2">
-                  <span className="text-gray-500">wpm</span>
-                  <span className="text-yellow-500 text-2xl font-bold">{currentPlayer.wpm}</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-gray-500">acc</span>
-                  <span className="text-yellow-500 text-2xl font-bold">{currentPlayer.accuracy}%</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-gray-500">progress</span>
-                  <span className="text-yellow-500 text-2xl font-bold">
-                    {Math.floor(currentPlayer.progress)}%
-                  </span>
-                </div>
-              </div>
-            </div>
-          )}
+          {/* Virtual Keyboard */}
+          <VirtualKeyboard pressedKey={pressedKey} showKeyboard={true} />
         </div>
 
         {/* Leaderboard Sidebar */}
         <div className="lg:col-span-1">
-          <div className="bg-gray-800/50 backdrop-blur-md p-6 rounded-xl border border-gray-700/50 sticky top-8">
-            <h2 className="text-xl font-bold text-yellow-500 mb-4 flex items-center gap-2">
-              <FontAwesomeIcon icon={faTrophy} />
-              <span>Leaderboard</span>
-            </h2>
-            <div className="space-y-2">
+          <div className="bg-gray-800/30 rounded-lg border border-gray-700/50 p-6 sticky top-24">
+            <h3 className="text-yellow-500 text-lg font-bold mb-4 flex items-center gap-2">
+              <FontAwesomeIcon icon={faTrophy} /> Leaderboard
+            </h3>
+            <div className="space-y-3">
               {sortedPlayers.map((player, index) => (
                 <div
                   key={player.id}
-                  className={`p-3 rounded-lg flex items-center justify-between ${
+                  className={`p-3 rounded-lg transition-all ${
                     player.id === user?.uid
                       ? 'bg-yellow-500/20 border border-yellow-500/50'
-                      : 'bg-gray-700/30'
+                      : 'bg-gray-700/30 border border-gray-700/50'
                   }`}
                 >
-                  <div className="flex items-center gap-3">
-                    <span className="text-gray-500 font-mono text-sm w-6">
-                      {index === 0 && player.isFinished ? '🥇' : 
-                       index === 1 && player.isFinished ? '🥈' : 
-                       index === 2 && player.isFinished ? '🥉' : 
-                       `#${index + 1}`}
-                    </span>
-                    <div>
-                      <span className={`font-medium block ${
-                        player.id === user?.uid ? 'text-yellow-500' : 'text-gray-300'
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <span className={`text-xs font-bold ${
+                        player.id === user?.uid ? 'text-yellow-500' : 'text-gray-500'
                       }`}>
+                        #{index + 1}
+                      </span>
+                      <span className="text-gray-300 font-medium text-sm">
                         {player.name}
                       </span>
-                      <div className="flex items-center gap-2 text-xs text-gray-500">
-                        <span>{player.wpm} wpm</span>
-                        <span>•</span>
-                        <span>{Math.floor(player.progress)}%</span>
-                      </div>
                     </div>
+                    {player.isFinished && (
+                      <FontAwesomeIcon icon={faCheckCircle} className="text-green-500 text-sm" />
+                    )}
                   </div>
-                  {player.isFinished && (
-                    <FontAwesomeIcon icon={faCheckCircle} className="text-green-500" />
-                  )}
+                  
+                  <div className="flex justify-between text-xs text-gray-500 mb-2">
+                    <span>{player.wpm} wpm</span>
+                    <span>{Math.floor(player.progress)}%</span>
+                  </div>
+                  
+                  <div className="w-full bg-gray-600 rounded-full h-1.5">
+                    <div
+                      className={`h-1.5 rounded-full transition-all duration-300 ${
+                        player.id === user?.uid
+                          ? 'bg-gradient-to-r from-yellow-500 to-yellow-600'
+                          : 'bg-gradient-to-r from-gray-500 to-gray-600'
+                      }`}
+                      style={{ width: `${player.progress}%` }}
+                    />
+                  </div>
                 </div>
               ))}
             </div>
           </div>
         </div>
       </div>
-
-      {/* Virtual Keyboard */}
-      <VirtualKeyboard pressedKey={pressedKey} nextKey={nextKey} showKeyboard={true} />
     </main>
   );
 }

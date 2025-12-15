@@ -382,7 +382,7 @@ export default function RoomPage({ params }: { params: { code: string } }) {
           </div>
 
           {/* Text Display */}
-          <div className="mb-8">
+          <div className="mb-8 mt-16">
             <div 
               className="text-left leading-relaxed px-4 max-w-4xl mx-auto overflow-hidden cursor-text"
               onClick={() => inputRef.current?.focus()}

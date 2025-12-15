@@ -345,7 +345,7 @@ export default function PracticePage() {
         </div>
 
         {/* Text Display */}
-        <div className="mb-8">
+        <div className="mb-8 mt-16">
           {!isStarted && (
             <div className="text-center mb-6 text-gray-600 text-sm animate-pulse">
               Start typing to begin...

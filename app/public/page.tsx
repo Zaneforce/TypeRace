@@ -252,7 +252,7 @@ export default function PublicRoomPage() {
           </div>
 
           {/* Text Display */}
-          <div className="mb-8">
+          <div className="mb-8 mt-16">
             {!isStarted && (
               <div className="text-center mb-6 text-gray-600 text-sm animate-pulse">
                 Start typing to begin...
@@ -263,15 +263,15 @@ export default function PublicRoomPage() {
               className="text-left leading-relaxed px-4 max-w-4xl mx-auto overflow-hidden cursor-text"
               onClick={() => inputRef.current?.focus()}
               style={{ 
-              fontSize: '2rem',
-              letterSpacing: '0.02em',
-              wordSpacing: '0.5em',
-              lineHeight: '1.8',
-              height: '10.8rem',
-              position: 'relative'
-            }}
-          >
-            <div style={{ 
+                fontSize: '2rem',
+                letterSpacing: '0.02em',
+                wordSpacing: '0.5em',
+                lineHeight: '1.8',
+                height: '10.8rem',
+                position: 'relative'
+              }}
+            >
+              <div style={{ 
               position: 'absolute',
               top: 0,
               left: 0,
