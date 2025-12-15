@@ -4,7 +4,7 @@ import { useEffect, useState, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { database } from '@/lib/firebase';
-import { ref, onValue, update, get } from 'firebase/database';
+import { ref, onValue, update, get, remove } from 'firebase/database';
 import VirtualKeyboard from '@/components/VirtualKeyboard';
 import { useKeyboardSound } from '@/hooks/useKeyboardSound';
 import { calculateWPM, calculateAccuracy, getRandomText } from '@/utils/textUtils';
@@ -89,6 +89,13 @@ export default function RoomPage({ params }: { params: { code: string } }) {
     const unsubscribe = onValue(roomRef, async (snapshot) => {
       const data = snapshot.val();
       if (data) {
+        // Check if current user has been kicked (not in players list)
+        if (!data.players || !data.players[user.uid]) {
+          alert('Anda telah di-kick dari room!');
+          router.push('/');
+          return;
+        }
+        
         setRoom(data);
         
         // Check if all players finished
@@ -219,11 +226,36 @@ export default function RoomPage({ params }: { params: { code: string } }) {
     setTimeout(() => setCopied(false), 2000);
   };
 
+  const handleKickPlayer = async (playerId: string) => {
+    if (!room || !user) return;
+    
+    // Only room creator can kick players
+    if (room.createdBy !== user.uid) {
+      alert('Hanya room owner yang bisa kick player!');
+      return;
+    }
+
+    // Cannot kick yourself
+    if (playerId === user.uid) {
+      alert('Anda tidak bisa kick diri sendiri!');
+      return;
+    }
+
+    if (confirm(`Kick player ${room.players[playerId]?.name}?`)) {
+      try {
+        await remove(ref(database, `customRooms/${roomCode}/players/${playerId}`));
+      } catch (error) {
+        console.error('Error kicking player:', error);
+        alert('Gagal kick player!');
+      }
+    }
+  };
+
   const handlePlayAgain = async () => {
     if (!room || !user) return;
     
     // Only room owner can restart
-    if (room.createdBy !== (user.displayName || user.email)) {
+    if (room.createdBy !== user.uid) {
       alert('Hanya room owner yang bisa restart!');
       return;
     }
@@ -432,10 +464,24 @@ export default function RoomPage({ params }: { params: { code: string } }) {
                       <span className="text-gray-300 font-medium text-sm">
                         {player.name}
                       </span>
+                      {player.id === room.createdBy && (
+                        <FontAwesomeIcon icon={faCrown} className="text-yellow-500 text-xs" title="Room Owner" />
+                      )}
                     </div>
-                    {player.isFinished && (
-                      <FontAwesomeIcon icon={faCheckCircle} className="text-green-500 text-sm" />
-                    )}
+                    <div className="flex items-center gap-2">
+                      {player.isFinished && (
+                        <FontAwesomeIcon icon={faCheckCircle} className="text-green-500 text-sm" />
+                      )}
+                      {room.createdBy === user?.uid && player.id !== user?.uid && room.status === 'waiting' && (
+                        <button
+                          onClick={() => handleKickPlayer(player.id)}
+                          className="text-red-500 hover:text-red-400 transition-colors text-xs px-2 py-1 rounded hover:bg-red-500/10"
+                          title="Kick Player"
+                        >
+                          ✕
+                        </button>
+                      )}
+                    </div>
                   </div>
                   
                   <div className="flex justify-between text-xs text-gray-500 mb-2">
@@ -507,7 +553,7 @@ export default function RoomPage({ params }: { params: { code: string } }) {
               })()}
 
               <div className="space-y-3">
-                {room.createdBy === (user?.displayName || user?.email) && (
+                {room.createdBy === user?.uid && (
                   <button
                     onClick={handlePlayAgain}
                     className="w-full px-6 py-3 bg-yellow-500 hover:bg-yellow-600 text-gray-900 font-bold rounded-lg transition-all transform hover:scale-105 flex items-center justify-center gap-2"

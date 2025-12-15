@@ -49,7 +49,7 @@ export default function CreateRoomPage() {
         status: 'waiting',
         players: {},
         createdAt: Date.now(),
-        createdBy: user.displayName || user.email || 'Anonymous',
+        createdBy: user.uid,
       };
 
       await set(ref(database, `customRooms/${roomCode}`), roomData);
