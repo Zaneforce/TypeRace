@@ -9,7 +9,7 @@ import VirtualKeyboard from '@/components/VirtualKeyboard';
 import { useKeyboardSound } from '@/hooks/useKeyboardSound';
 import { getRandomText, calculateWPM, calculateAccuracy } from '@/utils/textUtils';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faHome, faTrophy, faCheckCircle, faCrown } from '@fortawesome/free-solid-svg-icons';
+import { faHome, faTrophy, faCheckCircle, faCrown, faUsers, faVolumeHigh, faVolumeXmark } from '@fortawesome/free-solid-svg-icons';
 
 interface PlayerData {
   id: string;
@@ -286,8 +286,8 @@ export default function PublicRoomPage() {
       )}
 
       {/* Header */}
-      <div className="max-w-7xl mx-auto px-8 py-6">
-        <div className="flex justify-between items-center">
+      <div className="border-b border-gray-800 sticky top-0 bg-[#1a1a1a] z-10">
+        <div className="max-w-7xl mx-auto px-8 py-6 flex justify-between items-center">
           <button
             onClick={() => router.push('/lobby')}
             className="text-gray-500 hover:text-yellow-500 transition-colors flex items-center gap-2 text-sm font-medium"
@@ -295,9 +295,13 @@ export default function PublicRoomPage() {
             <FontAwesomeIcon icon={faHome} />
             <span>Lobby</span>
           </button>
-          <h1 className="text-2xl font-bold text-yellow-500">
-            Public Room
-          </h1>
+          
+          <div className="text-center">
+            <h1 className="text-yellow-500 text-2xl font-bold flex items-center justify-center gap-2">
+              <FontAwesomeIcon icon={faUsers} /> Public Room
+            </h1>
+          </div>
+          
           <div className="flex items-center gap-4">
             <button
               onClick={toggleSound}
@@ -306,10 +310,10 @@ export default function PublicRoomPage() {
               }`}
               title={soundEnabled ? 'Sound On' : 'Sound Off'}
             >
-              <span>{soundEnabled ? '🔊' : '🔇'}</span>
+              <FontAwesomeIcon icon={soundEnabled ? faVolumeHigh : faVolumeXmark} />
             </button>
             <div className="text-gray-500 text-sm">
-              {sortedPlayers.length}/5 Players
+              {sortedPlayers.length}/5 Player{sortedPlayers.length > 1 ? 's' : ''}
             </div>
           </div>
         </div>

@@ -9,7 +9,7 @@ import VirtualKeyboard from '@/components/VirtualKeyboard';
 import { useKeyboardSound } from '@/hooks/useKeyboardSound';
 import { calculateWPM, calculateAccuracy, getRandomText } from '@/utils/textUtils';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faHome, faUsers, faLink, faCheckCircle, faUser, faCrown, faTrophy, faRotateRight } from '@fortawesome/free-solid-svg-icons';
+import { faHome, faUsers, faLink, faCheckCircle, faUser, faCrown, faTrophy, faRotateRight, faVolumeHigh, faVolumeXmark } from '@fortawesome/free-solid-svg-icons';
 
 interface PlayerData {
   id: string;
@@ -351,7 +351,7 @@ export default function RoomPage({ params }: { params: { code: string } }) {
               }`}
               title={soundEnabled ? 'Sound On' : 'Sound Off'}
             >
-              <span>{soundEnabled ? '≡ƒöè' : '≡ƒöç'}</span>
+              <FontAwesomeIcon icon={soundEnabled ? faVolumeHigh : faVolumeXmark} />
             </button>
             <div className="text-gray-500 text-sm">
               {room ? Object.keys(room.players || {}).length : 0} Player{(room && Object.keys(room.players || {}).length > 1) ? 's' : ''}

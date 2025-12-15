@@ -8,12 +8,12 @@ import { useRoomStore } from '@/store/roomStore';
 import { getRandomText, calculateWPM, calculateAccuracy } from '@/utils/textUtils';
 import { Player } from '@/types/room';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faHome, faTrophy, faUser, faCheckCircle } from '@fortawesome/free-solid-svg-icons';
+import { faHome, faTrophy, faUser, faCheckCircle, faUsers, faVolumeHigh, faVolumeXmark } from '@fortawesome/free-solid-svg-icons';
 import { useAuth } from '@/contexts/AuthContext';
 
 export default function PublicRoomPage() {
   const router = useRouter();
-  const { playKeySound } = useKeyboardSound();
+  const { playKeySound, soundEnabled, toggleSound } = useKeyboardSound();
   const { user } = useAuth();
   const [pressedKey, setPressedKey] = useState('');
   const [nextKey, setNextKey] = useState('');
@@ -197,8 +197,8 @@ export default function PublicRoomPage() {
   return (
     <main className="min-h-screen bg-[#1a1a1a] text-gray-300">
       {/* Header */}
-      <div className="max-w-7xl mx-auto px-8 py-6">
-        <div className="flex justify-between items-center">
+      <div className="border-b border-gray-800 sticky top-0 bg-[#1a1a1a] z-10">
+        <div className="max-w-7xl mx-auto px-8 py-6 flex justify-between items-center">
           <button
             onClick={() => router.push('/')}
             className="text-gray-500 hover:text-yellow-500 transition-colors flex items-center gap-2 text-sm font-medium"
@@ -206,11 +206,27 @@ export default function PublicRoomPage() {
             <FontAwesomeIcon icon={faHome} />
             <span>Home</span>
           </button>
-          <h1 className="text-2xl font-bold text-yellow-500 flex items-center gap-2">
-            <FontAwesomeIcon icon={faTrophy} />
-            <span>Public Room</span>
-          </h1>
-          <div className="w-24"></div>
+          
+          <div className="text-center">
+            <h1 className="text-yellow-500 text-2xl font-bold flex items-center justify-center gap-2">
+              <FontAwesomeIcon icon={faUsers} /> Public Room
+            </h1>
+          </div>
+          
+          <div className="flex items-center gap-4">
+            <button
+              onClick={toggleSound}
+              className={`text-sm font-medium transition-colors flex items-center gap-2 ${
+                soundEnabled ? 'text-yellow-500 hover:text-yellow-400' : 'text-gray-500 hover:text-gray-400'
+              }`}
+              title={soundEnabled ? 'Sound On' : 'Sound Off'}
+            >
+              <FontAwesomeIcon icon={soundEnabled ? faVolumeHigh : faVolumeXmark} />
+            </button>
+            <div className="text-gray-500 text-sm">
+              {sortedPlayers.length}/5 Player{sortedPlayers.length > 1 ? 's' : ''}
+            </div>
+          </div>
         </div>
       </div>
 
