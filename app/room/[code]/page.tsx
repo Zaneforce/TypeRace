@@ -47,6 +47,7 @@ export default function RoomPage({ params }: { params: { code: string } }) {
   const [copied, setCopied] = useState(false);
   const [showWinner, setShowWinner] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const hasJoinedRef = useRef(false);
   
   const roomCode = params.code.toUpperCase();
   const isHost = searchParams.get('host') === 'true';
@@ -81,6 +82,7 @@ export default function RoomPage({ params }: { params: { code: string } }) {
       };
 
       await update(ref(database, `customRooms/${roomCode}/players/${user.uid}`), playerData);
+      hasJoinedRef.current = true;
     };
 
     joinRoom();
@@ -90,7 +92,8 @@ export default function RoomPage({ params }: { params: { code: string } }) {
       const data = snapshot.val();
       if (data) {
         // Check if current user has been kicked (not in players list)
-        if (!data.players || !data.players[user.uid]) {
+        // Only check after user has successfully joined
+        if (hasJoinedRef.current && (!data.players || !data.players[user.uid])) {
           alert('Anda telah di-kick dari room!');
           router.push('/');
           return;
