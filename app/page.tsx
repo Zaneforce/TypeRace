@@ -10,7 +10,9 @@ import {
   faUsers,
   faSignOutAlt,
   faSignInAlt,
-  faArrowRight
+  faArrowRight,
+  faUser,
+  faTrophy
 } from '@fortawesome/free-solid-svg-icons';
 
 export default function Home() {
@@ -38,22 +40,45 @@ export default function Home() {
       </div>
 
       {/* User Info */}
-      <div className="absolute top-6 right-6 z-10">
+      <div className="absolute top-6 right-6 z-50">
         {user ? (
-          <div className="flex items-center gap-3 bg-gray-800/50 backdrop-blur-md px-4 py-2 rounded-full border border-gray-700/50">
-            <div className="w-8 h-8 bg-gradient-to-br from-yellow-500 to-orange-500 rounded-full flex items-center justify-center text-white font-bold text-sm">
-              {(user.displayName || user.email)?.[0]?.toUpperCase()}
-            </div>
-            <span className="text-gray-300 font-medium text-sm">
-              {user.displayName || user.email}
-            </span>
+          <div className="flex items-center gap-3">
+            {/* Profile Button */}
             <button
-              onClick={handleLogout}
-              className="text-gray-400 hover:text-red-400 transition-colors ml-2"
-              title="Logout"
+              onClick={() => router.push('/profile')}
+              className="flex items-center gap-2 bg-gray-800/50 hover:bg-gray-700/50 backdrop-blur-md px-4 py-2 rounded-full border border-gray-700/50 hover:border-yellow-500/50 transition-all text-gray-300 hover:text-yellow-500 cursor-pointer"
+              title="Profile"
             >
-              <FontAwesomeIcon icon={faSignOutAlt} />
+              <FontAwesomeIcon icon={faUser} />
+              <span className="text-sm font-medium">Profile</span>
             </button>
+            
+            {/* Leaderboard Button */}
+            <button
+              onClick={() => router.push('/leaderboard')}
+              className="flex items-center gap-2 bg-gray-800/50 hover:bg-gray-700/50 backdrop-blur-md px-4 py-2 rounded-full border border-gray-700/50 hover:border-yellow-500/50 transition-all text-gray-300 hover:text-yellow-500 cursor-pointer"
+              title="Leaderboard"
+            >
+              <FontAwesomeIcon icon={faTrophy} />
+              <span className="text-sm font-medium">Leaderboard</span>
+            </button>
+            
+            {/* User Info */}
+            <div className="flex items-center gap-3 bg-gray-800/50 backdrop-blur-md px-4 py-2 rounded-full border border-gray-700/50">
+              <div className="w-8 h-8 bg-gradient-to-br from-yellow-500 to-orange-500 rounded-full flex items-center justify-center text-white font-bold text-sm">
+                {(user.displayName || user.email)?.[0]?.toUpperCase()}
+              </div>
+              <span className="text-gray-300 font-medium text-sm">
+                {user.displayName || user.email}
+              </span>
+              <button
+                onClick={handleLogout}
+                className="text-gray-400 hover:text-red-400 transition-colors ml-2"
+                title="Logout"
+              >
+                <FontAwesomeIcon icon={faSignOutAlt} />
+              </button>
+            </div>
           </div>
         ) : (
           <button

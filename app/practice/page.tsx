@@ -7,14 +7,19 @@ import { useKeyboardSound } from '@/hooks/useKeyboardSound';
 import { useTypingStore } from '@/store/typingStore';
 import { getRandomText } from '@/utils/textUtils';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faHome, faRotateRight, faVolumeHigh, faVolumeXmark } from '@fortawesome/free-solid-svg-icons';
+import { faHome, faRotateRight, faVolumeHigh, faVolumeXmark, faSkull } from '@fortawesome/free-solid-svg-icons';
+import { useAuth } from '@/contexts/AuthContext';
+import { database } from '@/lib/firebase';
+import { ref, push, set, get, update } from 'firebase/database';
+import { TypingSession, UserStats } from '@/types/stats';
 
-type Mode = 'time' | 'words';
+type Mode = 'time' | 'words' | 'sudden-death';
 type TimeOption = 15 | 30 | 60 | 120;
 type WordsOption = 10 | 25 | 50 | 100;
 
 export default function PracticePage() {
   const router = useRouter();
+  const { user } = useAuth();
   const { playKeySound, soundEnabled, toggleSound } = useKeyboardSound();
   const [pressedKey, setPressedKey] = useState('');
   const [nextKey, setNextKey] = useState('');
@@ -22,6 +27,8 @@ export default function PracticePage() {
   const [timeLimit, setTimeLimit] = useState<TimeOption>(30);
   const [wordLimit, setWordLimit] = useState<WordsOption>(25);
   const [timeLeft, setTimeLeft] = useState<number>(30);
+  const [startTime, setStartTime] = useState<number>(0);
+  const [suddenDeathWordCount, setSuddenDeathWordCount] = useState<number>(50);
   const inputRef = useRef<HTMLInputElement>(null);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   
@@ -44,10 +51,105 @@ export default function PracticePage() {
     inputRef.current?.focus();
   }, [setCurrentText, mode, wordLimit]);
 
+  // Save session to Firebase
+  const saveSession = async () => {
+    if (!user) return;
+
+    const duration = mode === 'time' ? timeLimit : Math.floor((Date.now() - startTime) / 1000);
+    const wordCount = userInput.trim().split(/\s+/).length;
+
+    const session: TypingSession = {
+      id: Date.now().toString(),
+      userId: user.uid,
+      wpm: Math.round(stats.wpm),
+      accuracy: Math.round(stats.accuracy),
+      mode: mode,
+      duration: duration,
+      wordCount: wordCount,
+      timestamp: Date.now(),
+      roomType: 'practice'
+    };
+
+    try {
+      // Save session
+      const sessionRef = push(ref(database, `sessions/${user.uid}`));
+      await set(sessionRef, session);
+
+      // Update user stats
+      const statsRef = ref(database, `userStats/${user.uid}`);
+      const statsSnapshot = await get(statsRef);
+      const currentStats = statsSnapshot.val() as UserStats | null;
+
+      if (currentStats) {
+        // Update existing stats
+        const sessions = currentStats.sessions || [];
+        sessions.push(session);
+        
+        const totalTests = sessions.length;
+        const totalWpm = sessions.reduce((sum, s) => sum + s.wpm, 0);
+        const totalAcc = sessions.reduce((sum, s) => sum + s.accuracy, 0);
+        const bestWpm = Math.max(...sessions.map(s => s.wpm));
+        const totalTime = sessions.reduce((sum, s) => sum + s.duration, 0);
+
+        await update(statsRef, {
+          totalTests,
+          averageWpm: Math.round(totalWpm / totalTests),
+          bestWpm,
+          averageAccuracy: Math.round(totalAcc / totalTests),
+          totalTimeTyping: totalTime,
+          lastPlayed: Date.now(),
+          sessions
+        });
+      } else {
+        // Create new stats
+        const newStats: UserStats = {
+          userId: user.uid,
+          username: user.displayName || user.email || 'Anonymous',
+          totalTests: 1,
+          averageWpm: Math.round(stats.wpm),
+          bestWpm: Math.round(stats.wpm),
+          averageAccuracy: Math.round(stats.accuracy),
+          totalTimeTyping: duration,
+          lastPlayed: Date.now(),
+          sessions: [session]
+        };
+        await set(statsRef, newStats);
+      }
+
+      // Update leaderboard (both daily and all-time)
+      const leaderboardEntry = {
+        userId: user.uid,
+        username: user.displayName || user.email || 'Anonymous',
+        wpm: Math.round(stats.wpm),
+        accuracy: Math.round(stats.accuracy),
+        timestamp: Date.now()
+      };
+
+      // Save to daily leaderboard
+      const dailyRef = push(ref(database, 'leaderboard/daily'));
+      await set(dailyRef, leaderboardEntry);
+
+      // Update all-time leaderboard (only if it's a new personal best)
+      if (!currentStats || Math.round(stats.wpm) >= currentStats.bestWpm) {
+        const allTimeRef = push(ref(database, 'leaderboard/alltime'));
+        await set(allTimeRef, leaderboardEntry);
+      }
+    } catch (error) {
+      console.error('Error saving session:', error);
+    }
+  };
+
   useEffect(() => {
     if (mode === 'words') {
       if (userInput.length === currentText.length && currentText.length > 0) {
         finishTyping();
+        saveSession();
+      }
+    } else if (mode === 'sudden-death') {
+      // Check if reached the end
+      if (userInput.length === currentText.length && currentText.length > 0) {
+        finishTyping();
+        saveSession();
       }
     }
     // In time mode, don't finish when text ends - just keep going with auto-generated text
@@ -60,6 +162,7 @@ export default function PracticePage() {
         setTimeLeft((prev) => {
           if (prev <= 1) {
             finishTyping();
+            saveSession();
             return 0;
           }
           return prev - 1;
@@ -98,6 +201,7 @@ export default function PracticePage() {
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (!isStarted && e.key !== 'Tab') {
       startTyping();
+      setStartTime(Date.now());
     }
 
     // Play sound
@@ -112,6 +216,19 @@ export default function PracticePage() {
     if (isFinished) return;
     
     const input = e.target.value;
+    
+    // Sudden Death mode: Game over on first mistake
+    if (mode === 'sudden-death' && input.length > userInput.length) {
+      const nextChar = currentText[userInput.length];
+      const typedChar = input[input.length - 1];
+      
+      if (typedChar !== nextChar) {
+        // Wrong character - instant game over
+        finishTyping();
+        saveSession();
+        return;
+      }
+    }
     
     // Only allow typing the next character correctly (like Monkeytype)
     if (input.length > userInput.length) {
@@ -129,9 +246,13 @@ export default function PracticePage() {
 
   const handleRestart = () => {
     resetTyping();
-    const wordCount = mode === 'words' ? wordLimit : 50;
+    let wordCount = 50;
+    if (mode === 'words') wordCount = wordLimit;
+    else if (mode === 'sudden-death') wordCount = suddenDeathWordCount;
+    
     setCurrentText(getRandomText(wordCount));
     setTimeLeft(mode === 'time' ? timeLimit : 0);
+    setStartTime(0);
     if (timerRef.current) {
       clearInterval(timerRef.current);
     }
@@ -141,7 +262,10 @@ export default function PracticePage() {
   const handleModeChange = (newMode: Mode) => {
     setMode(newMode);
     resetTyping();
-    const wordCount = newMode === 'words' ? wordLimit : 50;
+    let wordCount = 50;
+    if (newMode === 'words') wordCount = wordLimit;
+    else if (newMode === 'sudden-death') wordCount = suddenDeathWordCount;
+    
     setCurrentText(getRandomText(wordCount));
     setTimeLeft(newMode === 'time' ? timeLimit : 0);
   };
@@ -272,7 +396,8 @@ export default function PracticePage() {
               onClick={handleRestart}
               className="text-gray-500 hover:text-yellow-500 transition-colors flex items-center gap-2 text-sm font-medium"
             >
-              <span>🔄 Restart</span>
+              <FontAwesomeIcon icon={faRotateRight} />
+              <span>Restart</span>
             </button>
           </div>
         </div>
@@ -293,10 +418,18 @@ export default function PracticePage() {
             </div>
             <div className="bg-gray-800/50 p-4 rounded-lg border border-gray-700/50">
               <div className="text-gray-500 text-xs mb-1">
-                {mode === 'time' ? 'time left' : 'progress'}
+                {mode === 'time' ? 'time left' : mode === 'sudden-death' ? 'mistakes' : 'progress'}
               </div>
-              <div className="text-yellow-500 text-3xl font-bold">
-                {mode === 'time' ? `${timeLeft}s` : `${userInput.length}/${currentText.length}`}
+              <div className={`text-3xl font-bold ${mode === 'sudden-death' ? 'text-red-500' : 'text-yellow-500'}`}>
+                {mode === 'time' 
+                  ? `${timeLeft}s` 
+                  : mode === 'sudden-death'
+                  ? (
+                    <span className="flex items-center justify-center gap-2">
+                      <FontAwesomeIcon icon={faSkull} /> 0
+                    </span>
+                  )
+                  : `${userInput.length}/${currentText.length}`}
               </div>
             </div>
           </div>
@@ -327,6 +460,17 @@ export default function PracticePage() {
               >
                 words
               </button>
+              <button
+                onClick={() => handleModeChange('sudden-death')}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 ${
+                  mode === 'sudden-death' 
+                    ? 'bg-red-500 text-white' 
+                    : 'text-gray-400 hover:text-gray-300'
+                }`}
+                title="One mistake = Game Over"
+              >
+                <FontAwesomeIcon icon={faSkull} /> sudden death
+              </button>
             </div>
 
             {/* Options */}
@@ -348,7 +492,7 @@ export default function PracticePage() {
                     </button>
                   ))}
                 </>
-              ) : (
+              ) : mode === 'words' ? (
                 <>
                   {[10, 25, 50, 100].map((words) => (
                     <button
@@ -365,7 +509,29 @@ export default function PracticePage() {
                     </button>
                   ))}
                 </>
-              )}  
+              ) : (
+                <>
+                  {[25, 50, 75, 100].map((words) => (
+                    <button
+                      key={words}
+                      onClick={() => {
+                        setSuddenDeathWordCount(words);
+                        if (!isStarted) {
+                          setCurrentText(getRandomText(words));
+                        }
+                      }}
+                      disabled={isStarted}
+                      className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                        suddenDeathWordCount === words
+                          ? 'bg-red-500/20 text-red-500 border border-red-500/50'
+                          : 'text-gray-500 hover:text-gray-300'
+                      } ${isStarted ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    >
+                      {words}
+                    </button>
+                  ))}
+                </>
+              )}
             </div>
           </div>
         </div>

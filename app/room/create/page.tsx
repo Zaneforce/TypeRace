@@ -7,16 +7,17 @@ import { database } from '@/lib/firebase';
 import { ref, set } from 'firebase/database';
 import { getRandomText } from '@/utils/textUtils';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faHome, faUsers, faRocket, faLink, faBolt, faLightbulb } from '@fortawesome/free-solid-svg-icons';
+import { faHome, faUsers, faRocket, faLink, faBolt, faLightbulb, faSkull } from '@fortawesome/free-solid-svg-icons';
 
 export default function CreateRoomPage() {
   const router = useRouter();
   const { user } = useAuth();
   const [roomName, setRoomName] = useState('');
   const [maxPlayers, setMaxPlayers] = useState(4);
-  const [mode, setMode] = useState<'time' | 'words'>('time');
+  const [mode, setMode] = useState<'time' | 'words' | 'sudden-death'>('time');
   const [timeLimit, setTimeLimit] = useState(60);
   const [wordLimit, setWordLimit] = useState(50);
+  const [suddenDeathWordCount, setSuddenDeathWordCount] = useState(50);
   const [isCreating, setIsCreating] = useState(false);
 
   useEffect(() => {
@@ -44,7 +45,9 @@ export default function CreateRoomPage() {
       const roomCode = Math.random().toString(36).substring(2, 8).toUpperCase();
       
       // Generate appropriate amount of text based on mode
-      const wordCount = mode === 'time' ? 200 : Math.max(wordLimit, 100);
+      let wordCount = 200;
+      if (mode === 'words') wordCount = Math.max(wordLimit, 100);
+      else if (mode === 'sudden-death') wordCount = suddenDeathWordCount;
       
       // Create room data in Firebase
       const roomData = {
@@ -141,7 +144,7 @@ export default function CreateRoomPage() {
             <label className="block text-white font-semibold mb-2">
               Mode Permainan
             </label>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-3 gap-3">
               <button
                 type="button"
                 onClick={() => setMode('time')}
@@ -163,6 +166,18 @@ export default function CreateRoomPage() {
                 }`}
               >
                 <FontAwesomeIcon icon={faLightbulb} /> Kata
+              </button>
+              <button
+                type="button"
+                onClick={() => setMode('sudden-death')}
+                className={`py-3 px-4 rounded-lg font-semibold transition-all flex items-center justify-center gap-2 ${
+                  mode === 'sudden-death'
+                    ? 'bg-red-600 text-white border-2 border-red-400'
+                    : 'bg-gray-700 text-gray-300 border-2 border-gray-600 hover:border-gray-500'
+                }`}
+                title="One mistake = Game Over"
+              >
+                <FontAwesomeIcon icon={faSkull} /> Sudden Death
               </button>
             </div>
           </div>
@@ -190,7 +205,7 @@ export default function CreateRoomPage() {
                 ))}
               </div>
             </div>
-          ) : (
+          ) : mode === 'words' ? (
             <div>
               <label className="block text-white font-semibold mb-2">
                 Jumlah Kata: {wordLimit}
@@ -204,6 +219,28 @@ export default function CreateRoomPage() {
                     className={`py-2 px-3 rounded-lg font-semibold transition-all ${
                       wordLimit === words
                         ? 'bg-orange-600 text-white'
+                        : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                    }`}
+                  >
+                    {words}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <div>
+              <label className="block text-white font-semibold mb-2">
+                Jumlah Kata: {suddenDeathWordCount}
+              </label>
+              <div className="grid grid-cols-4 gap-2">
+                {[25, 50, 75, 100].map((words) => (
+                  <button
+                    key={words}
+                    type="button"
+                    onClick={() => setSuddenDeathWordCount(words)}
+                    className={`py-2 px-3 rounded-lg font-semibold transition-all ${
+                      suddenDeathWordCount === words
+                        ? 'bg-red-600 text-white'
                         : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
                     }`}
                   >

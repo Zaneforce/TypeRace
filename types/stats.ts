@@ -1,0 +1,31 @@
+export interface TypingSession {
+  id: string;
+  userId: string;
+  wpm: number;
+  accuracy: number;
+  mode: 'time' | 'words';
+  duration: number; // in seconds
+  wordCount: number;
+  timestamp: number;
+  roomType: 'practice' | 'custom';
+}
+
+export interface UserStats {
+  userId: string;
+  username: string;
+  totalTests: number;
+  averageWpm: number;
+  bestWpm: number;
+  averageAccuracy: number;
+  totalTimeTyping: number; // in seconds
+  lastPlayed: number;
+  sessions: TypingSession[];
+}
+
+export interface LeaderboardEntry {
+  userId: string;
+  username: string;
+  wpm: number;
+  accuracy: number;
+  timestamp: number;
+}

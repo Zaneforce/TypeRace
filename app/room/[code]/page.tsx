@@ -4,12 +4,13 @@ import { useEffect, useState, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { database } from '@/lib/firebase';
-import { ref, onValue, update, get, remove } from 'firebase/database';
+import { ref, onValue, update, get, remove, set, push } from 'firebase/database';
 import VirtualKeyboard from '@/components/VirtualKeyboard';
 import { useKeyboardSound } from '@/hooks/useKeyboardSound';
 import { calculateWPM, calculateAccuracy, getRandomText } from '@/utils/textUtils';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faHome, faUsers, faLink, faCheckCircle, faUser, faCrown, faTrophy, faRotateRight, faVolumeHigh, faVolumeXmark, faGamepad, faRocket, faClock, faFileAlt } from '@fortawesome/free-solid-svg-icons';
+import { faHome, faUsers, faLink, faCheckCircle, faUser, faCrown, faTrophy, faRotateRight, faVolumeHigh, faVolumeXmark, faGamepad, faRocket, faClock, faFileAlt, faSkull } from '@fortawesome/free-solid-svg-icons';
+import { TypingSession, UserStats } from '@/types/stats';
 
 interface PlayerData {
   id: string;
@@ -29,7 +30,7 @@ interface RoomData {
   status: 'waiting' | 'playing' | 'finished';
   players: { [key: string]: PlayerData };
   maxPlayers: number;
-  mode: 'time' | 'words';
+  mode: 'time' | 'words' | 'sudden-death';
   timeLimit: number;
   wordLimit: number;
   createdAt: number;
@@ -194,6 +195,103 @@ export default function RoomPage({ params }: { params: { code: string } }) {
       isFinished: true,
       finishTime: Date.now()
     });
+
+    // Save session to Firebase
+    await saveSession();
+  };
+
+  // Save session to Firebase
+  const saveSession = async () => {
+    if (!user || !room) return;
+
+    const currentPlayerData = room.players[user.uid];
+    if (!currentPlayerData) return;
+
+    const playerStartTime = startTime || currentPlayerData.startTime;
+    if (!playerStartTime) return;
+
+    const duration = Math.floor((Date.now() - playerStartTime) / 1000);
+    const wordCount = userInput.trim().split(/\s+/).length;
+
+    const session: TypingSession = {
+      id: Date.now().toString(),
+      userId: user.uid,
+      wpm: Math.round(currentPlayerData.wpm),
+      accuracy: Math.round(currentPlayerData.accuracy),
+      mode: room.mode,
+      duration: duration,
+      wordCount: wordCount,
+      timestamp: Date.now(),
+      roomType: 'custom'
+    };
+
+    try {
+      // Save session
+      const sessionRef = push(ref(database, `sessions/${user.uid}`));
+      await set(sessionRef, session);
+
+      // Update user stats
+      const statsRef = ref(database, `userStats/${user.uid}`);
+      const statsSnapshot = await get(statsRef);
+      const currentStats = statsSnapshot.val() as UserStats | null;
+
+      if (currentStats) {
+        // Update existing stats
+        const sessions = currentStats.sessions || [];
+        sessions.push(session);
+        
+        const totalTests = sessions.length;
+        const totalWpm = sessions.reduce((sum, s) => sum + s.wpm, 0);
+        const totalAcc = sessions.reduce((sum, s) => sum + s.accuracy, 0);
+        const bestWpm = Math.max(...sessions.map(s => s.wpm));
+        const totalTime = sessions.reduce((sum, s) => sum + s.duration, 0);
+
+        await update(statsRef, {
+          totalTests,
+          averageWpm: Math.round(totalWpm / totalTests),
+          bestWpm,
+          averageAccuracy: Math.round(totalAcc / totalTests),
+          totalTimeTyping: totalTime,
+          lastPlayed: Date.now(),
+          sessions
+        });
+      } else {
+        // Create new stats
+        const newStats: UserStats = {
+          userId: user.uid,
+          username: user.displayName || user.email || 'Anonymous',
+          totalTests: 1,
+          averageWpm: Math.round(currentPlayerData.wpm),
+          bestWpm: Math.round(currentPlayerData.wpm),
+          averageAccuracy: Math.round(currentPlayerData.accuracy),
+          totalTimeTyping: duration,
+          lastPlayed: Date.now(),
+          sessions: [session]
+        };
+        await set(statsRef, newStats);
+      }
+
+      // Update leaderboard (both daily and all-time)
+      const leaderboardEntry = {
+        userId: user.uid,
+        username: user.displayName || user.email || 'Anonymous',
+        wpm: Math.round(currentPlayerData.wpm),
+        accuracy: Math.round(currentPlayerData.accuracy),
+        timestamp: Date.now()
+      };
+
+      // Save to daily leaderboard
+      const dailyRef = push(ref(database, 'leaderboard/daily'));
+      await set(dailyRef, leaderboardEntry);
+
+      // Update all-time leaderboard (only if it's a new personal best)
+      if (!currentStats || Math.round(currentPlayerData.wpm) >= currentStats.bestWpm) {
+        const allTimeRef = push(ref(database, 'leaderboard/alltime'));
+        await set(allTimeRef, leaderboardEntry);
+      }
+    } catch (error) {
+      console.error('Error saving session:', error);
+    }
   };
 
   const handleKeyDown = async (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -226,6 +324,19 @@ export default function RoomPage({ params }: { params: { code: string } }) {
     if (!room || !user) return;
     
     const input = e.target.value;
+    
+    // Sudden Death mode: Game over on first mistake
+    if (room.mode === 'sudden-death' && input.length > userInput.length) {
+      const nextChar = room.text[userInput.length];
+      const typedChar = input[input.length - 1];
+      
+      if (typedChar !== nextChar) {
+        // Wrong character - instant game over
+        await handleFinishGame();
+        return;
+      }
+    }
+    
     setUserInput(input);
 
     // Get current player data
@@ -249,7 +360,7 @@ export default function RoomPage({ params }: { params: { code: string } }) {
     }
 
     // Check finish condition based on mode
-    const isFinished = room.mode === 'words' 
+    const isFinished = (room.mode === 'words' || room.mode === 'sudden-death')
       ? input.length >= room.text.length
       : false; // In time mode, finish is controlled by timer
 
@@ -264,6 +375,9 @@ export default function RoomPage({ params }: { params: { code: string } }) {
     // Only add finishTime if the player just finished
     if (isFinished && !room.players[user.uid]?.isFinished) {
       updateData.finishTime = Date.now();
+      
+      // Save session when player finishes
+      setTimeout(() => saveSession(), 100);
     }
 
     await update(ref(database, `customRooms/${roomCode}/players/${user.uid}`), updateData);
@@ -509,7 +623,7 @@ export default function RoomPage({ params }: { params: { code: string } }) {
                     <label className="block text-white font-semibold mb-2">
                       Mode Permainan
                     </label>
-                    <div className="grid grid-cols-2 gap-3 max-w-md mx-auto">
+                    <div className="grid grid-cols-3 gap-3 max-w-lg mx-auto">
                       <button
                         type="button"
                         onClick={async () => {
@@ -535,6 +649,20 @@ export default function RoomPage({ params }: { params: { code: string } }) {
                         }`}
                       >
                         <FontAwesomeIcon icon={faFileAlt} /> Kata
+                      </button>
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          await update(ref(database, `customRooms/${roomCode}`), { mode: 'sudden-death' });
+                        }}
+                        className={`py-3 px-4 rounded-lg font-semibold transition-all flex items-center justify-center gap-2 ${
+                          room.mode === 'sudden-death'
+                            ? 'bg-red-600 text-white border-2 border-red-400'
+                            : 'bg-gray-700 text-gray-300 border-2 border-gray-600 hover:border-gray-500'
+                        }`}
+                        title="One mistake = Game Over"
+                      >
+                        <FontAwesomeIcon icon={faSkull} /> Sudden Death
                       </button>
                     </div>
                   </div>
@@ -783,13 +911,13 @@ export default function RoomPage({ params }: { params: { code: string } }) {
 
       {/* Winner Modal */}
       {showWinner && room && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-gray-800 rounded-2xl p-8 max-w-2xl w-full mx-4 border-2 border-yellow-500/50 shadow-2xl">
             <div className="text-center">
-              <div className="mb-4">
+              <div className="mb-6">
                 <FontAwesomeIcon icon={faTrophy} className="text-yellow-500 text-6xl" />
               </div>
-              <h2 className="text-3xl font-bold text-yellow-500 mb-6">Game Selesai!</h2>
+              <h2 className="text-3xl font-bold text-yellow-500 mb-8">Game Selesai!</h2>
               
               {(() => {
                 const sortedPlayers = Object.values(room.players)
@@ -805,13 +933,13 @@ export default function RoomPage({ params }: { params: { code: string } }) {
                 return (
                   <>
                     {/* Podium Display */}
-                    <div className="flex items-end justify-center gap-4 mb-8">
+                    <div className="flex items-end justify-center gap-6 mb-10">
                       {/* 2nd Place */}
                       {topThree[1] && (
                         <div className="flex flex-col items-center">
-                          <div className="text-4xl mb-2">🥈</div>
-                          <div className="bg-gradient-to-b from-gray-600 to-gray-700 rounded-t-lg p-4 w-32 text-center border-2 border-gray-500">
-                            <div className="text-white font-bold text-sm mb-1">{topThree[1].name}</div>
+                          <div className="text-4xl mb-3">🥈</div>
+                          <div className="bg-gradient-to-b from-gray-600 to-gray-700 rounded-t-lg p-5 w-32 text-center border-2 border-gray-500">
+                            <div className="text-white font-bold text-sm mb-2">{topThree[1].name}</div>
                             <div className="text-gray-300 text-xs mb-1">{topThree[1].wpm} WPM</div>
                             <div className="text-gray-400 text-xs">{topThree[1].accuracy}%</div>
                           </div>
@@ -824,9 +952,9 @@ export default function RoomPage({ params }: { params: { code: string } }) {
                       {/* 1st Place */}
                       {topThree[0] && (
                         <div className="flex flex-col items-center -mt-8">
-                          <div className="text-5xl mb-2">🏆</div>
-                          <div className="bg-gradient-to-b from-yellow-500 to-yellow-600 rounded-t-lg p-4 w-36 text-center border-2 border-yellow-400">
-                            <div className="text-gray-900 font-bold mb-1">{topThree[0].name}</div>
+                          <div className="text-5xl mb-3">🏆</div>
+                          <div className="bg-gradient-to-b from-yellow-500 to-yellow-600 rounded-t-lg p-6 w-36 text-center border-2 border-yellow-400">
+                            <div className="text-gray-900 font-bold mb-2">{topThree[0].name}</div>
                             <div className="text-gray-800 text-sm mb-1">{topThree[0].wpm} WPM</div>
                             <div className="text-gray-700 text-sm">{topThree[0].accuracy}%</div>
                           </div>
@@ -839,9 +967,9 @@ export default function RoomPage({ params }: { params: { code: string } }) {
                       {/* 3rd Place */}
                       {topThree[2] && (
                         <div className="flex flex-col items-center">
-                          <div className="text-4xl mb-2">🥉</div>
-                          <div className="bg-gradient-to-b from-orange-700 to-orange-800 rounded-t-lg p-4 w-32 text-center border-2 border-orange-600">
-                            <div className="text-white font-bold text-sm mb-1">{topThree[2].name}</div>
+                          <div className="text-4xl mb-3">🥉</div>
+                          <div className="bg-gradient-to-b from-orange-700 to-orange-800 rounded-t-lg p-5 w-32 text-center border-2 border-orange-600">
+                            <div className="text-white font-bold text-sm mb-2">{topThree[2].name}</div>
                             <div className="text-orange-200 text-xs mb-1">{topThree[2].wpm} WPM</div>
                             <div className="text-orange-300 text-xs">{topThree[2].accuracy}%</div>
                           </div>
@@ -854,8 +982,8 @@ export default function RoomPage({ params }: { params: { code: string } }) {
 
                     {/* All Players Ranking */}
                     {sortedPlayers.length > 3 && (
-                      <div className="bg-gray-700/50 rounded-lg p-4 mb-6 max-h-48 overflow-y-auto">
-                        <div className="text-gray-400 text-xs mb-2">Ranking Lengkap:</div>
+                      <div className="bg-gray-700/50 rounded-lg p-5 mb-6 max-h-48 overflow-y-auto">
+                        <div className="text-gray-400 text-xs mb-3">Ranking Lengkap:</div>
                         {sortedPlayers.slice(3).map((player: any, idx: number) => (
                           <div key={player.id} className="flex justify-between items-center py-2 border-b border-gray-600 last:border-0">
                             <div className="flex items-center gap-2">
@@ -874,18 +1002,18 @@ export default function RoomPage({ params }: { params: { code: string } }) {
                 );
               })()}
 
-              <div className="space-y-3">
+              <div className="space-y-4 mt-8">
                 {room.createdBy === user?.uid && (
                   <button
                     onClick={handlePlayAgain}
-                    className="w-full px-6 py-3 bg-yellow-500 hover:bg-yellow-600 text-gray-900 font-bold rounded-lg transition-all transform hover:scale-105 flex items-center justify-center gap-2"
+                    className="w-full px-6 py-4 bg-yellow-500 hover:bg-yellow-600 text-gray-900 font-bold rounded-lg transition-all transform hover:scale-105 flex items-center justify-center gap-2"
                   >
                     <FontAwesomeIcon icon={faRotateRight} /> Main Lagi
                   </button>
                 )}
                 <button
                   onClick={() => router.push('/')}
-                  className="w-full px-6 py-3 bg-gray-700 hover:bg-gray-600 text-white font-semibold rounded-lg transition-colors"
+                  className="w-full px-6 py-4 bg-gray-700 hover:bg-gray-600 text-white font-semibold rounded-lg transition-colors"
                 >
                   Kembali ke Home
                 </button>
