@@ -67,7 +67,7 @@ const indonesianWords = {
 // Generate a random sentence
 function generateRandomSentence(wordCount: number = 15): string {
   const words: string[] = [];
-  const allWords = [...commonWords, ...nouns, ...verbs, ...adjectives];
+  const allWords = [...englishWords.common, ...englishWords.nouns, ...englishWords.verbs, ...englishWords.adjectives];
   
   for (let i = 0; i < wordCount; i++) {
     const randomWord = allWords[Math.floor(Math.random() * allWords.length)];
@@ -83,7 +83,7 @@ function generateRandomSentence(wordCount: number = 15): string {
 // Generate programming-focused text
 function generateProgrammingText(wordCount: number = 15): string {
   const words: string[] = [];
-  const mixedWords = [...programmingWords, ...commonWords, ...verbs];
+  const mixedWords = [...englishWords.programming, ...englishWords.common, ...englishWords.verbs];
   
   for (let i = 0; i < wordCount; i++) {
     const randomWord = mixedWords[Math.floor(Math.random() * mixedWords.length)];
