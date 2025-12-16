@@ -203,7 +203,7 @@ export default function PracticePage() {
       // Calculate competitive score
       const competitiveScore = wpm * (accuracy / 100) * Math.sqrt(wordCount);
       const currentBestScore = currentStats 
-        ? currentStats.bestWpm * (currentStats.bestAccuracy / 100) * Math.sqrt(currentStats.totalWords)
+        ? currentStats.bestWpm * (currentStats.bestAccuracy || currentStats.averageAccuracy) / 100 * Math.sqrt(currentStats.totalWords || 0)
         : 0;
 
       // Update all-time leaderboard (only if it's a new competitive best)

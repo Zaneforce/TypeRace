@@ -17,6 +17,8 @@ export interface UserStats {
   averageWpm: number;
   bestWpm: number;
   averageAccuracy: number;
+  bestAccuracy: number;
+  totalWords: number;
   totalTimeTyping: number; // in seconds
   lastPlayed: number;
   sessions: TypingSession[];
