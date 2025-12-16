@@ -39,7 +39,7 @@ export default function PracticePage() {
   } = useTypingStore();
 
   useEffect(() => {
-    const wordCount = mode === 'words' ? wordLimit : 50;
+    const wordCount = mode === 'words' ? Math.max(wordLimit, 50) : 100;
     setCurrentText(getRandomText(wordCount));
     inputRef.current?.focus();
   }, [setCurrentText, mode, wordLimit]);
@@ -50,6 +50,7 @@ export default function PracticePage() {
         finishTyping();
       }
     }
+    // In time mode, don't finish when text ends - just keep going with auto-generated text
   }, [userInput, currentText, finishTyping, mode]);
 
   // Timer for time mode
@@ -79,7 +80,16 @@ export default function PracticePage() {
     } else {
       setNextKey('');
     }
-  }, [userInput, currentText]);
+    
+    // Auto-generate more text in time mode when user is close to finishing
+    if (mode === 'time' && isStarted && !isFinished) {
+      const progress = userInput.length / currentText.length;
+      // When user has typed 80% of the text, add more text
+      if (progress > 0.8) {
+        setCurrentText(currentText + ' ' + getRandomText(50));
+      }
+    }
+  }, [userInput, currentText, mode, isStarted, isFinished, setCurrentText]);
 
   const handlePaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
     e.preventDefault();
@@ -150,72 +160,88 @@ export default function PracticePage() {
   };
 
   const renderText = () => {
-    // Split text into words to avoid cutting words
     const words = currentText.split(' ');
-    let charCount = 0;
-    let wordStartIndex = 0;
+    const CHARS_PER_LINE = 45; // Approximate characters per line
     
-    // Find which word the user is currently typing
-    for (let i = 0; i < words.length; i++) {
-      const wordLength = words[i].length + (i < words.length - 1 ? 1 : 0); // +1 for space
+    // Build lines by fitting words
+    const lines: string[][] = [[]];
+    let currentLineLength = 0;
+    let lineIndex = 0;
+    
+    words.forEach((word, wordIdx) => {
+      const wordWithSpace = wordIdx < words.length - 1 ? word + ' ' : word;
+      const wordLength = wordWithSpace.length;
       
-      if (charCount + wordLength > userInput.length) {
-        // User is typing this word or hasn't reached it yet
-        // Calculate how many words to skip based on characters typed
-        const estimatedCharsPerLine = 50;
-        const linesToSkip = Math.floor(charCount / estimatedCharsPerLine);
-        
-        if (linesToSkip > 0) {
-          // Find the word index at the start of visible text
-          let skipChars = linesToSkip * estimatedCharsPerLine;
-          let skipWordCount = 0;
-          let skipCharCount = 0;
-          
-          for (let j = 0; j < words.length; j++) {
-            const wLength = words[j].length + (j < words.length - 1 ? 1 : 0);
-            if (skipCharCount + wLength > skipChars) {
-              wordStartIndex = j;
-              break;
-            }
-            skipCharCount += wLength;
-          }
-        }
+      if (currentLineLength + wordLength > CHARS_PER_LINE && currentLineLength > 0) {
+        // Start new line
+        lineIndex++;
+        lines[lineIndex] = [];
+        currentLineLength = 0;
+      }
+      
+      lines[lineIndex].push(wordWithSpace);
+      currentLineLength += wordLength;
+    });
+    
+    // Calculate which line the user is currently on
+    let charsSoFar = 0;
+    let currentLine = 0;
+    
+    for (let i = 0; i < lines.length; i++) {
+      const lineText = lines[i].join('');
+      if (charsSoFar + lineText.length > userInput.length) {
+        currentLine = i;
         break;
       }
-      
-      charCount += wordLength;
+      charsSoFar += lineText.length;
     }
     
-    // Get visible words
-    const visibleWords = words.slice(wordStartIndex);
-    const displayText = visibleWords.join(' ');
+    // Always show 3 lines with typing line in the middle
+    const startLine = currentLine === 0 ? 0 : currentLine - 1;
     
-    // Calculate character offset
+    // Show 3 lines (with enough text generated, there will always be lines)
+    const visibleLines = lines.slice(startLine, startLine + 3);
+    
+    // Calculate character offset for the visible portion
     let charOffset = 0;
-    for (let i = 0; i < wordStartIndex; i++) {
-      charOffset += words[i].length + (i < words.length - 1 ? 1 : 0);
+    for (let i = 0; i < startLine; i++) {
+      charOffset += lines[i].join('').length;
     }
     
-    return displayText.split('').map((char, index) => {
-      const actualIndex = index + charOffset;
-      let className = 'text-3xl font-mono transition-all duration-75 ';
-      
-      if (actualIndex < userInput.length) {
-        className += userInput[actualIndex] === char 
-          ? 'text-yellow-400' 
-          : 'text-red-500 bg-red-500/20 rounded';
-      } else if (actualIndex === userInput.length) {
-        className += 'text-gray-300 bg-yellow-500/30 border-l-2 border-yellow-500';
-      } else {
-        className += 'text-gray-600';
-      }
-      
-      return (
-        <span key={actualIndex} className={className}>
-          {char}
-        </span>
-      );
-    });
+    return (
+      <div>
+        {visibleLines.map((line, lineIdx) => {
+          if (!line || line.length === 0) return null;
+          const lineText = line.join('');
+          const lineStartChar = charOffset + (lineIdx > 0 ? visibleLines.slice(0, lineIdx).reduce((acc, l) => acc + (l?.join('').length || 0), 0) : 0);
+          
+          return (
+            <div key={startLine + lineIdx} style={{ minHeight: '3.6rem' }}>
+              {lineText.split('').map((char, charIdx) => {
+                const actualIndex = lineStartChar + charIdx;
+                let className = 'text-3xl typing-char ';
+                
+                if (actualIndex < userInput.length) {
+                  className += userInput[actualIndex] === char 
+                    ? 'text-yellow-400' 
+                    : 'text-red-400 bg-red-900/30 rounded px-0.5';
+                } else if (actualIndex === userInput.length) {
+                  className += 'text-gray-200 typing-caret bg-yellow-500/30 border-l-2 border-yellow-400';
+                } else {
+                  className += 'text-gray-500';
+                }
+                
+                return (
+                  <span key={actualIndex} className={className}>
+                    {char}
+                  </span>
+                );
+              })}
+            </div>
+          );
+        })}
+      </div>
+    );
   };
 
   return (
@@ -353,21 +379,19 @@ export default function PracticePage() {
           )}
           
           <div 
-            className="text-left leading-relaxed px-4 max-w-4xl mx-auto overflow-hidden"
+            className="text-left px-4 max-w-4xl mx-auto overflow-hidden cursor-text"
+            onClick={() => inputRef.current?.focus()}
             style={{ 
               fontSize: '2rem',
               letterSpacing: '0.02em',
               wordSpacing: '0.5em',
               lineHeight: '1.8',
-              height: '10.8rem', // 3 lines at 1.8 line height * 2rem font = 10.8rem
+              height: '10.8rem',
               position: 'relative'
             }}
           >
             <div style={{ 
-              position: 'absolute',
-              top: 0,
-              left: 0,
-              right: 0,
+              position: 'relative',
               padding: '0 1rem'
             }}>
               {renderText()}
