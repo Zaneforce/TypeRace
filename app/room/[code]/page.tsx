@@ -320,6 +320,8 @@ export default function RoomPage({ params }: { params: { code: string } }) {
         const totalWpm = sessions.reduce((sum, s) => sum + s.wpm, 0);
         const totalAcc = sessions.reduce((sum, s) => sum + s.accuracy, 0);
         const bestWpm = Math.max(...sessions.map(s => s.wpm));
+        const bestAcc = Math.max(...sessions.map(s => s.accuracy));
+        const totalWords = sessions.reduce((sum, s) => sum + s.wordCount, 0);
         const totalTime = sessions.reduce((sum, s) => sum + s.duration, 0);
 
         await update(statsRef, {
@@ -327,6 +329,8 @@ export default function RoomPage({ params }: { params: { code: string } }) {
           averageWpm: Math.round(totalWpm / totalTests),
           bestWpm,
           averageAccuracy: Math.round(totalAcc / totalTests),
+          bestAccuracy: Math.round(bestAcc),
+          totalWords,
           totalTimeTyping: totalTime,
           lastPlayed: Date.now(),
           sessions
@@ -340,6 +344,8 @@ export default function RoomPage({ params }: { params: { code: string } }) {
           averageWpm: wpm,
           bestWpm: wpm,
           averageAccuracy: Math.round(accuracy),
+          bestAccuracy: Math.round(accuracy),
+          totalWords: wordCount,
           totalTimeTyping: duration,
           lastPlayed: Date.now(),
           sessions: [session]
