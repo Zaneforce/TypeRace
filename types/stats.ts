@@ -3,7 +3,7 @@ export interface TypingSession {
   userId: string;
   wpm: number;
   accuracy: number;
-  mode: 'time' | 'words';
+  mode: 'time' | 'words' | 'sudden-death';
   duration: number; // in seconds
   wordCount: number;
   timestamp: number;
