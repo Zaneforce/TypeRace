@@ -7,12 +7,10 @@ import { useAuth } from '@/contexts/AuthContext';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { 
   faBullseye, 
-  faTrophy, 
   faUsers,
   faSignOutAlt,
   faSignInAlt,
-  faArrowRight,
-  faLock
+  faArrowRight
 } from '@fortawesome/free-solid-svg-icons';
 
 export default function Home() {
@@ -95,7 +93,7 @@ export default function Home() {
         </div>
 
         {/* Mode Cards */}
-        <div className="grid md:grid-cols-3 gap-6 max-w-5xl mx-auto">
+        <div className="grid md:grid-cols-2 gap-8 max-w-4xl mx-auto">
           {/* Practice Mode */}
           <Link href="/practice">
             <div className="group relative bg-gradient-to-br from-gray-800/40 to-gray-900/40 backdrop-blur-sm border border-gray-700/50 hover:border-yellow-500/50 p-8 rounded-3xl cursor-pointer transform transition-all duration-300 hover:scale-105 hover:-translate-y-2 overflow-hidden min-h-[340px]">
@@ -118,43 +116,6 @@ export default function Home() {
               </div>
             </div>
           </Link>
-
-          {/* Public Room */}
-          <div
-            onClick={() => {
-              if (!user) {
-                router.push('/login');
-              } else {
-                router.push('/lobby');
-              }
-            }}
-            className="group relative bg-gradient-to-br from-gray-800/40 to-gray-900/40 backdrop-blur-sm border border-gray-700/50 hover:border-purple-500/50 p-8 rounded-3xl cursor-pointer transform transition-all duration-300 hover:scale-105 hover:-translate-y-2 overflow-hidden min-h-[340px]"
-          >
-            <div className="absolute inset-0 bg-gradient-to-br from-purple-500/0 to-purple-500/0 group-hover:from-purple-500/10 group-hover:to-transparent transition-all duration-300"></div>
-            
-            <div className="relative">
-              <div className="w-16 h-16 bg-purple-500/10 group-hover:bg-purple-500/20 rounded-2xl flex items-center justify-center mb-4 transition-all duration-300 group-hover:scale-110 group-hover:rotate-3">
-                <FontAwesomeIcon icon={faTrophy} className="text-3xl text-purple-500" />
-              </div>
-              <h2 className="text-2xl font-bold text-white mb-2 group-hover:text-purple-500 transition-colors">
-                Public Lobby
-              </h2>
-              <p className="text-gray-400 group-hover:text-gray-300 transition-colors mb-4">
-                Race against other players
-              </p>
-              {!user ? (
-                <div className="flex items-center text-yellow-500 text-sm font-medium bg-yellow-500/10 px-3 py-1.5 rounded-full w-fit">
-                  <FontAwesomeIcon icon={faLock} className="mr-2 text-xs" />
-                  <span>Login required</span>
-                </div>
-              ) : (
-                <div className="flex items-center text-purple-500 opacity-0 group-hover:opacity-100 transition-all duration-300 transform translate-x-0 group-hover:translate-x-2">
-                  <span className="text-sm font-semibold">Join lobby</span>
-                  <FontAwesomeIcon icon={faArrowRight} className="ml-2 text-xs" />
-                </div>
-              )}
-            </div>
-          </div>
 
           {/* Custom Room */}
           <div className="group relative bg-gradient-to-br from-gray-800/40 to-gray-900/40 backdrop-blur-sm border border-gray-700/50 hover:border-orange-500/50 p-8 pb-6 rounded-3xl transition-all duration-300 hover:scale-105 hover:-translate-y-2 overflow-hidden min-h-[340px]">

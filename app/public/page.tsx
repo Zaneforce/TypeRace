@@ -2,197 +2,268 @@
 
 import { useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
+import { useAuth } from '@/contexts/AuthContext';
+import { database } from '@/lib/firebase';
+import { ref, onValue, update, get } from 'firebase/database';
 import VirtualKeyboard from '@/components/VirtualKeyboard';
 import { useKeyboardSound } from '@/hooks/useKeyboardSound';
-import { useRoomStore } from '@/store/roomStore';
-import { getRandomText, calculateWPM, calculateAccuracy } from '@/utils/textUtils';
-import { Player } from '@/types/room';
+import { calculateWPM, calculateAccuracy, getRandomText } from '@/utils/textUtils';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faHome, faTrophy, faUser, faCheckCircle, faUsers, faVolumeHigh, faVolumeXmark } from '@fortawesome/free-solid-svg-icons';
-import { useAuth } from '@/contexts/AuthContext';
+import { faHome, faUsers, faCheckCircle, faCrown, faTrophy, faRotateRight, faVolumeHigh, faVolumeXmark } from '@fortawesome/free-solid-svg-icons';
+
+interface PlayerData {
+  id: string;
+  name: string;
+  progress: number;
+  wpm: number;
+  accuracy: number;
+  isFinished: boolean;
+  finishTime?: number;
+  startTime?: number;
+}
+
+interface RoomData {
+  text: string;
+  status: 'waiting' | 'playing' | 'finished';
+  players: { [key: string]: PlayerData };
+  createdAt: number;
+}
 
 export default function PublicRoomPage() {
   const router = useRouter();
   const { playKeySound, soundEnabled, toggleSound } = useKeyboardSound();
   const { user } = useAuth();
+  
+  const [room, setRoom] = useState<RoomData | null>(null);
   const [pressedKey, setPressedKey] = useState('');
-  const [nextKey, setNextKey] = useState('');
   const [userInput, setUserInput] = useState('');
   const [isStarted, setIsStarted] = useState(false);
-  const [startTime, setStartTime] = useState<number | null>(null);
-  const [wpm, setWpm] = useState(0);
-  const [accuracy, setAccuracy] = useState(100);
+  const [startTime, setStartTime] = useState<number>(0);
+  const [showWinner, setShowWinner] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
-  
-  const { currentRoom, currentPlayer, setRoom, setPlayer, updatePlayer, updatePlayers } = useRoomStore();
+  const hasJoinedRef = useRef(false);
 
-  // Simulate joining a public room
   useEffect(() => {
     if (!user) {
       router.push('/login');
       return;
     }
 
-    const playerName = user.displayName || user.email || `Player${Math.floor(Math.random() * 1000)}`;
+    const roomRef = ref(database, 'publicRoom');
     
-    const newPlayer: Player = {
-      id: Math.random().toString(36).substr(2, 9),
-      name: playerName,
-      progress: 0,
-      wpm: 0,
-      accuracy: 100,
-      isFinished: false,
+    // Initialize or join public room
+    const joinRoom = async () => {
+      const snapshot = await get(roomRef);
+      
+      if (!snapshot.exists()) {
+        // Create public room if it doesn't exist
+        const newText = getRandomText();
+        await update(roomRef, {
+          text: newText,
+          status: 'waiting',
+          players: {},
+          createdAt: Date.now(),
+        });
+      }
+
+      // Add player to room
+      const playerName = user.displayName || user.email || `Player${Math.floor(Math.random() * 1000)}`;
+      const playerData: PlayerData = {
+        id: user.uid,
+        name: playerName,
+        progress: 0,
+        wpm: 0,
+        accuracy: 100,
+        isFinished: false,
+      };
+
+      await update(ref(database, `publicRoom/players/${user.uid}`), playerData);
+      hasJoinedRef.current = true;
     };
 
-    const text = getRandomText();
-    
-    // Simulate other players
-    const otherPlayers: Player[] = Array.from({ length: 3 }, (_, i) => ({
-      id: `bot-${i}`,
-      name: `Player ${i + 1}`,
-      progress: 0,
-      wpm: 0,
-      accuracy: 100,
-      isFinished: false,
-    }));
+    joinRoom();
 
-    setRoom({
-      id: 'public-room',
-      code: 'PUBLIC',
-      text,
-      players: [newPlayer, ...otherPlayers],
-      isStarted: false,
-      createdAt: Date.now(),
+    // Listen to room changes
+    const unsubscribe = onValue(roomRef, async (snapshot) => {
+      const data = snapshot.val();
+      if (data) {
+        setRoom(data);
+        
+        // Check if all players finished
+        const players = Object.values(data.players || {}) as PlayerData[];
+        const allFinished = players.every((p: PlayerData) => p.isFinished);
+        
+        if (allFinished && players.length > 0) {
+          if (data.status !== 'finished') {
+            // Find winner based on score (WPM * Accuracy)
+            const sortedPlayers = players
+              .filter((p: PlayerData) => p.isFinished)
+              .map((p: PlayerData) => ({
+                ...p,
+                score: p.wpm * (p.accuracy / 100)
+              }))
+              .sort((a, b) => b.score - a.score);
+            
+            const winner = sortedPlayers[0];
+            await update(ref(database, 'publicRoom'), {
+              status: 'finished',
+              winner: winner.id
+            });
+          }
+          setShowWinner(true);
+        }
+      }
     });
 
-    setPlayer(newPlayer);
     inputRef.current?.focus();
 
-    // Simulate bot typing
-    const botInterval = setInterval(() => {
-      updatePlayers(
-        [newPlayer, ...otherPlayers].map((p) => {
-          if (p.id.startsWith('bot-') && !p.isFinished) {
-            const newProgress = Math.min(p.progress + Math.random() * 3, 100);
-            return {
-              ...p,
-              progress: newProgress,
-              wpm: Math.floor(40 + Math.random() * 40),
-              isFinished: newProgress >= 100,
-              finishTime: newProgress >= 100 ? Date.now() : undefined,
-            };
-          }
-          return p;
-        })
-      );
-    }, 1000);
+    return () => unsubscribe();
+  }, [user, router]);
 
-    return () => clearInterval(botInterval);
-  }, [setRoom, setPlayer, updatePlayers]);
-
+  // Reset local state when room status changes to 'waiting' (play again)
   useEffect(() => {
-    if (!currentRoom || !currentPlayer) return;
-
-    const progress = (userInput.length / currentRoom.text.length) * 100;
-    const isFinished = userInput.length >= currentRoom.text.length;
-
-    updatePlayer(currentPlayer.id, {
-      progress,
-      wpm,
-      accuracy,
-      isFinished,
-      finishTime: isFinished ? Date.now() : undefined,
-    });
-  }, [userInput, wpm, accuracy]); // Removed currentRoom, currentPlayer, updatePlayer from dependencies
-
-  useEffect(() => {
-    if (!currentRoom) return;
-    if (userInput.length < currentRoom.text.length) {
-      setNextKey(currentRoom.text[userInput.length]);
-    } else {
-      setNextKey('');
+    if (room && room.status === 'waiting') {
+      setUserInput('');
+      setIsStarted(false);
+      setStartTime(0);
+      setShowWinner(false);
+      inputRef.current?.focus();
     }
-  }, [userInput, currentRoom]);
+  }, [room?.status]);
+
 
   const handlePaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
     e.preventDefault();
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+  const handleKeyDown = async (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (!room || !user) return;
+
     if (!isStarted && e.key !== 'Tab') {
       setIsStarted(true);
-      setStartTime(Date.now());
+      const now = Date.now();
+      setStartTime(now);
+      
+      // Save startTime to Firebase
+      await update(ref(database, `publicRoom/players/${user.uid}`), {
+        startTime: now
+      });
+
+      // Update room status to playing if still waiting
+      if (room.status === 'waiting') {
+        await update(ref(database, 'publicRoom'), {
+          status: 'playing'
+        });
+      }
     }
 
-    const specialKeys = ['Backspace', 'Enter', 'Tab', 'Shift', 'Control', 'Alt'];
     playKeySound();
     
     setPressedKey(e.key);
     setTimeout(() => setPressedKey(''), 100);
   };
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!currentRoom || currentPlayer?.isFinished) return;
+  const handleInputChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!room || !user) return;
     
     const input = e.target.value;
     setUserInput(input);
 
+    // Get current player data
+    const currentPlayerData = room.players[user.uid];
+    const playerStartTime = startTime || currentPlayerData?.startTime;
+
     // Calculate stats
-    if (startTime) {
-      const timeElapsed = (Date.now() - startTime) / 1000;
-      const calculatedWpm = calculateWPM(input.length, timeElapsed);
-      setWpm(calculatedWpm);
+    const progress = (input.length / room.text.length) * 100;
+    let wpm = 0;
+    let accuracy = 100;
+
+    if (playerStartTime && input.length > 0) {
+      const timeElapsed = (Date.now() - playerStartTime) / 1000;
+      wpm = calculateWPM(input.length, timeElapsed);
 
       let correct = 0;
       for (let i = 0; i < input.length; i++) {
-        if (input[i] === currentRoom.text[i]) correct++;
+        if (input[i] === room.text[i]) correct++;
       }
-      setAccuracy(calculateAccuracy(correct, input.length));
+      accuracy = calculateAccuracy(correct, input.length);
     }
+
+    const isFinished = input.length >= room.text.length;
+
+    // Update player in Firebase
+    const updateData: any = {
+      progress,
+      wpm,
+      accuracy,
+      isFinished,
+    };
+
+    // Only add finishTime if the player just finished
+    if (isFinished && !room.players[user.uid]?.isFinished) {
+      updateData.finishTime = Date.now();
+    }
+
+    await update(ref(database, `publicRoom/players/${user.uid}`), updateData);
+  };
+
+  const handlePlayAgain = async () => {
+    if (!room || !user) return;
+
+    // Reset room state
+    const newText = getRandomText();
+    const resetPlayers: { [key: string]: any } = {};
+    
+    Object.values(room.players).forEach((player: any) => {
+      resetPlayers[player.id] = {
+        id: player.id,
+        name: player.name,
+        progress: 0,
+        wpm: 0,
+        accuracy: 100,
+        isFinished: false,
+      };
+    });
+
+    await update(ref(database, 'publicRoom'), {
+      text: newText,
+      status: 'waiting',
+      players: resetPlayers,
+      winner: null,
+    });
+
+    // Reset local state
+    setUserInput('');
+    setIsStarted(false);
+    setStartTime(0);
+    setShowWinner(false);
+    inputRef.current?.focus();
   };
 
   const renderText = () => {
-    if (!currentRoom) return null;
+    if (!room) return null;
 
-    const charsPerLine = 45;
-    const completedLines = Math.floor(userInput.length / charsPerLine);
-    let charOffset = 0;
-    if (completedLines > 0) {
-      charOffset = Math.max(0, (completedLines - 0) * charsPerLine);
-    }
-    
-    const displayText = currentRoom.text.substring(charOffset);
-
-    return displayText.split('').map((char, index) => {
-      const actualIndex = index + charOffset;
+    return room.text.split('').map((char, index) => {
       let className = 'text-3xl font-mono transition-all duration-75 ';
       
-      if (actualIndex < userInput.length) {
-        className += userInput[actualIndex] === char 
+      if (index < userInput.length) {
+        className += userInput[index] === char 
           ? 'text-yellow-400' 
           : 'text-red-500 bg-red-500/20 rounded';
-      } else if (actualIndex === userInput.length) {
+      } else if (index === userInput.length) {
         className += 'text-gray-300 bg-yellow-500/30 border-l-2 border-yellow-500';
       } else {
         className += 'text-gray-600';
       }
       
       return (
-        <span key={actualIndex} className={className}>
+        <span key={index} className={className}>
           {char}
         </span>
       );
     });
   };
 
-  const sortedPlayers = currentRoom?.players.sort((a, b) => {
-    if (a.isFinished && b.isFinished) {
-      return (a.finishTime || 0) - (b.finishTime || 0);
-    }
-    if (a.isFinished) return -1;
-    if (b.isFinished) return 1;
-    return b.progress - a.progress;
-  }) || [];
 
   return (
     <main className="min-h-screen bg-[#1a1a1a] text-gray-300">
@@ -224,7 +295,7 @@ export default function PublicRoomPage() {
               <FontAwesomeIcon icon={soundEnabled ? faVolumeHigh : faVolumeXmark} />
             </button>
             <div className="text-gray-500 text-sm">
-              {sortedPlayers.length}/5 Player{sortedPlayers.length > 1 ? 's' : ''}
+              {room ? Object.keys(room.players || {}).length : 0} Player{(room && Object.keys(room.players || {}).length > 1) ? 's' : ''}
             </div>
           </div>
         </div>
@@ -237,28 +308,22 @@ export default function PublicRoomPage() {
           <div className="grid grid-cols-3 gap-4 mb-8">
             <div className="bg-gray-800/50 p-4 rounded-lg border border-gray-700/50">
               <div className="text-gray-500 text-xs mb-1">wpm</div>
-              <div className="text-yellow-500 text-3xl font-bold">{wpm}</div>
+              <div className="text-yellow-500 text-3xl font-bold">{room?.players[user?.uid || '']?.wpm || 0}</div>
             </div>
             <div className="bg-gray-800/50 p-4 rounded-lg border border-gray-700/50">
               <div className="text-gray-500 text-xs mb-1">accuracy</div>
-              <div className="text-yellow-500 text-3xl font-bold">{accuracy}%</div>
+              <div className="text-yellow-500 text-3xl font-bold">{room?.players[user?.uid || '']?.accuracy || 100}%</div>
             </div>
             <div className="bg-gray-800/50 p-4 rounded-lg border border-gray-700/50">
               <div className="text-gray-500 text-xs mb-1">progress</div>
               <div className="text-yellow-500 text-3xl font-bold">
-                {Math.floor((userInput.length / (currentRoom?.text.length || 1)) * 100)}%
+                {Math.floor((userInput.length / (room?.text.length || 1)) * 100)}%
               </div>
             </div>
           </div>
 
           {/* Text Display */}
           <div className="mb-8 mt-16">
-            {!isStarted && (
-              <div className="text-center mb-6 text-gray-600 text-sm animate-pulse">
-                Start typing to begin...
-              </div>
-            )}
-            
             <div 
               className="text-left leading-relaxed px-4 max-w-4xl mx-auto overflow-hidden cursor-text"
               onClick={() => inputRef.current?.focus()}
@@ -272,91 +337,171 @@ export default function PublicRoomPage() {
               }}
             >
               <div style={{ 
-              position: 'absolute',
-              top: 0,
-              left: 0,
-              right: 0,
-              padding: '0 1rem'
-            }}>
-              {renderText()}
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                right: 0,
+                padding: '0 1rem'
+              }}>
+                {renderText()}
+              </div>
+            </div>
+
+            {/* Hidden Input */}
+            <input
+              ref={inputRef}
+              type="text"
+              value={userInput}
+              onChange={handleInputChange}
+              onKeyDown={handleKeyDown}
+              onPaste={handlePaste}
+              disabled={room?.players[user?.uid || '']?.isFinished}
+              className="w-full bg-transparent text-transparent caret-transparent outline-none border-none"
+              style={{
+                position: 'absolute',
+                left: '-9999px'
+              }}
+              autoFocus
+            />
+          </div>
+
+          {/* Virtual Keyboard */}
+          <VirtualKeyboard pressedKey={pressedKey} showKeyboard={true} />
+        </div>
+
+        {/* Leaderboard Sidebar */}
+        <div className="lg:col-span-1">
+          <div className="bg-gray-800/30 rounded-lg border border-gray-700/50 p-6 sticky top-24">
+            <h3 className="text-yellow-500 text-lg font-bold mb-4 flex items-center gap-2">
+              <FontAwesomeIcon icon={faUsers} /> Players
+            </h3>
+            <div className="space-y-3">
+              {room && Object.values(room.players || {})
+                .map((p: any) => ({
+                  ...p,
+                  score: p.wpm * (p.accuracy / 100)
+                }))
+                .sort((a: any, b: any) => {
+                  if (a.isFinished && b.isFinished) return b.score - a.score;
+                  if (a.isFinished) return -1;
+                  if (b.isFinished) return 1;
+                  return b.progress - a.progress;
+                }).map((player: any, index: number) => (
+                <div
+                  key={player.id}
+                  className={`p-3 rounded-lg transition-all ${
+                    player.id === user?.uid
+                      ? 'bg-yellow-500/20 border border-yellow-500/50'
+                      : 'bg-gray-700/30 border border-gray-700/50'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      {index === 0 && player.isFinished && (
+                        <FontAwesomeIcon icon={faCrown} className="text-yellow-500 text-sm" />
+                      )}
+                      <span className={`text-xs font-bold ${
+                        player.id === user?.uid ? 'text-yellow-500' : 'text-gray-500'
+                      }`}>
+                        #{index + 1}
+                      </span>
+                      <span className="text-gray-300 font-medium text-sm">
+                        {player.name}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {player.isFinished && (
+                        <FontAwesomeIcon icon={faCheckCircle} className="text-green-500 text-sm" />
+                      )}
+                    </div>
+                  </div>
+                  
+                  <div className="flex justify-between text-xs text-gray-500 mb-2">
+                    <span>{player.wpm} wpm</span>
+                    <span>{Math.floor(player.progress)}%</span>
+                  </div>
+                  
+                  <div className="w-full bg-gray-600 rounded-full h-1.5">
+                    <div
+                      className={`h-1.5 rounded-full transition-all duration-300 ${
+                        player.id === user?.uid
+                          ? 'bg-gradient-to-r from-yellow-500 to-yellow-600'
+                          : 'bg-gradient-to-r from-gray-500 to-gray-600'
+                      }`}
+                      style={{ width: `${player.progress}%` }}
+                    />
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
-
-          {/* Hidden Input */}
-          <input
-            ref={inputRef}
-            type="text"
-            value={userInput}
-            onChange={handleInputChange}
-            onKeyDown={handleKeyDown}
-            onPaste={handlePaste}
-            disabled={currentPlayer?.isFinished}
-            className="w-full bg-transparent text-transparent caret-transparent outline-none border-none"
-            style={{
-              position: 'absolute',
-              left: '-9999px'
-            }}
-            autoFocus
-          />
         </div>
-
-        {/* Virtual Keyboard */}
-        <VirtualKeyboard pressedKey={pressedKey} showKeyboard={true} />
       </div>
 
-      {/* Leaderboard Sidebar */}
-      <div className="lg:col-span-1">
-        <div className="bg-gray-800/30 rounded-lg border border-gray-700/50 p-6 sticky top-24">
-          <h3 className="text-yellow-500 text-lg font-bold mb-4 flex items-center gap-2">
-            <FontAwesomeIcon icon={faTrophy} /> Leaderboard
-          </h3>
-          <div className="space-y-3">
-            {sortedPlayers.map((player, index) => (
-              <div
-                key={player.id}
-                className={`p-3 rounded-lg transition-all ${
-                  player.id === currentPlayer?.id
-                    ? 'bg-yellow-500/20 border border-yellow-500/50'
-                    : 'bg-gray-700/30 border border-gray-700/50'
-                }`}
-              >
-                <div className="flex items-center justify-between mb-2">
-                  <div className="flex items-center gap-2">
-                    <span className={`text-xs font-bold ${
-                      player.id === currentPlayer?.id ? 'text-yellow-500' : 'text-gray-500'
-                    }`}>
-                      #{index + 1}
-                    </span>
-                    <span className="text-gray-300 font-medium text-sm">
-                      {player.name}
-                    </span>
-                  </div>
-                  {player.isFinished && (
-                    <FontAwesomeIcon icon={faCheckCircle} className="text-green-500 text-sm" />
-                  )}
-                </div>
-                
-                <div className="flex justify-between text-xs text-gray-500 mb-2">
-                  <span>{player.wpm} wpm</span>
-                  <span>{Math.floor(player.progress)}%</span>
-                </div>
-                
-                <div className="w-full bg-gray-600 rounded-full h-1.5">
-                  <div
-                    className={`h-1.5 rounded-full transition-all duration-300 ${
-                      player.id === currentPlayer?.id
-                        ? 'bg-gradient-to-r from-yellow-500 to-yellow-600'
-                        : 'bg-gradient-to-r from-gray-500 to-gray-600'
-                    }`}
-                    style={{ width: `${player.progress}%` }}
-                  />
-                </div>
+      {/* Winner Modal */}
+      {showWinner && room && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50">
+          <div className="bg-gray-800 rounded-2xl p-8 max-w-md w-full mx-4 border-2 border-yellow-500/50 shadow-2xl">
+            <div className="text-center">
+              <div className="mb-4">
+                <FontAwesomeIcon icon={faTrophy} className="text-yellow-500 text-6xl" />
               </div>
-            ))}
+              <h2 className="text-3xl font-bold text-yellow-500 mb-2">Game Selesai!</h2>
+              
+              {(() => {
+                const sortedPlayers = Object.values(room.players)
+                  .filter((p: any) => p.isFinished)
+                  .map((p: any) => ({
+                    ...p,
+                    score: p.wpm * (p.accuracy / 100)
+                  }))
+                  .sort((a: any, b: any) => b.score - a.score);
+                const winner = sortedPlayers[0] as any;
+                
+                return (
+                  <>
+                    <p className="text-gray-300 text-lg mb-6">
+                      Pemenang: <span className="text-yellow-500 font-bold">{winner?.name}</span>
+                    </p>
+                    
+                    <div className="bg-gray-700/50 rounded-lg p-4 mb-6">
+                      <div className="grid grid-cols-3 gap-4 text-sm">
+                        <div>
+                          <div className="text-gray-500">WPM</div>
+                          <div className="text-yellow-500 text-2xl font-bold">{winner?.wpm}</div>
+                        </div>
+                        <div>
+                          <div className="text-gray-500">Accuracy</div>
+                          <div className="text-yellow-500 text-2xl font-bold">{winner?.accuracy}%</div>
+                        </div>
+                        <div>
+                          <div className="text-gray-500">Score</div>
+                          <div className="text-yellow-500 text-2xl font-bold">{Math.round(winner?.score || 0)}</div>
+                        </div>
+                      </div>
+                    </div>
+                  </>
+                );
+              })()}
+
+              <div className="space-y-3">
+                <button
+                  onClick={handlePlayAgain}
+                  className="w-full px-6 py-3 bg-yellow-500 hover:bg-yellow-600 text-gray-900 font-bold rounded-lg transition-all transform hover:scale-105 flex items-center justify-center gap-2"
+                >
+                  <FontAwesomeIcon icon={faRotateRight} /> Main Lagi
+                </button>
+                <button
+                  onClick={() => router.push('/')}
+                  className="w-full px-6 py-3 bg-gray-700 hover:bg-gray-600 text-white font-semibold rounded-lg transition-colors"
+                >
+                  Kembali ke Home
+                </button>
+              </div>
+            </div>
           </div>
         </div>
-      </div>
-    </div>
+      )}
     </main>
   );
 }
