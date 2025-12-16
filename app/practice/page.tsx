@@ -362,7 +362,10 @@ export default function PracticePage() {
     if (timerRef.current) {
       clearInterval(timerRef.current);
     }
-    inputRef.current?.focus();
+    // Auto-focus input after small delay to ensure state is updated
+    setTimeout(() => {
+      inputRef.current?.focus();
+    }, 10);
   };
 
   const handleModeChange = (newMode: Mode) => {
