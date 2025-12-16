@@ -14,6 +14,9 @@ export default function CreateRoomPage() {
   const { user } = useAuth();
   const [roomName, setRoomName] = useState('');
   const [maxPlayers, setMaxPlayers] = useState(4);
+  const [mode, setMode] = useState<'time' | 'words'>('time');
+  const [timeLimit, setTimeLimit] = useState(60);
+  const [wordLimit, setWordLimit] = useState(50);
   const [isCreating, setIsCreating] = useState(false);
 
   useEffect(() => {
@@ -40,12 +43,18 @@ export default function CreateRoomPage() {
       // Generate unique room code
       const roomCode = Math.random().toString(36).substring(2, 8).toUpperCase();
       
+      // Generate appropriate amount of text based on mode
+      const wordCount = mode === 'time' ? 200 : Math.max(wordLimit, 100);
+      
       // Create room data in Firebase
       const roomData = {
         code: roomCode,
         name: roomName,
         maxPlayers,
-        text: getRandomText(),
+        mode,
+        timeLimit,
+        wordLimit,
+        text: getRandomText(wordCount),
         status: 'waiting',
         players: {},
         createdAt: Date.now(),
@@ -127,6 +136,84 @@ export default function CreateRoomPage() {
             </div>
           </div>
 
+          {/* Game Mode */}
+          <div>
+            <label className="block text-white font-semibold mb-2">
+              Mode Permainan
+            </label>
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => setMode('time')}
+                className={`py-3 px-4 rounded-lg font-semibold transition-all flex items-center justify-center gap-2 ${
+                  mode === 'time'
+                    ? 'bg-orange-600 text-white border-2 border-orange-400'
+                    : 'bg-gray-700 text-gray-300 border-2 border-gray-600 hover:border-gray-500'
+                }`}
+              >
+                <FontAwesomeIcon icon={faBolt} /> Waktu
+              </button>
+              <button
+                type="button"
+                onClick={() => setMode('words')}
+                className={`py-3 px-4 rounded-lg font-semibold transition-all flex items-center justify-center gap-2 ${
+                  mode === 'words'
+                    ? 'bg-orange-600 text-white border-2 border-orange-400'
+                    : 'bg-gray-700 text-gray-300 border-2 border-gray-600 hover:border-gray-500'
+                }`}
+              >
+                <FontAwesomeIcon icon={faLightbulb} /> Kata
+              </button>
+            </div>
+          </div>
+
+          {/* Mode Settings */}
+          {mode === 'time' ? (
+            <div>
+              <label className="block text-white font-semibold mb-2">
+                Durasi: {timeLimit} detik
+              </label>
+              <div className="grid grid-cols-4 gap-2">
+                {[15, 30, 60, 120].map((time) => (
+                  <button
+                    key={time}
+                    type="button"
+                    onClick={() => setTimeLimit(time)}
+                    className={`py-2 px-3 rounded-lg font-semibold transition-all ${
+                      timeLimit === time
+                        ? 'bg-orange-600 text-white'
+                        : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                    }`}
+                  >
+                    {time}s
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <div>
+              <label className="block text-white font-semibold mb-2">
+                Jumlah Kata: {wordLimit}
+              </label>
+              <div className="grid grid-cols-4 gap-2">
+                {[25, 50, 100, 200].map((words) => (
+                  <button
+                    key={words}
+                    type="button"
+                    onClick={() => setWordLimit(words)}
+                    className={`py-2 px-3 rounded-lg font-semibold transition-all ${
+                      wordLimit === words
+                        ? 'bg-orange-600 text-white'
+                        : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                    }`}
+                  >
+                    {words}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Info Box */}
           <div className="bg-blue-900/30 border border-blue-700 rounded-lg p-4 flex gap-3">
             <div className="text-xl text-blue-400 mt-0.5">
@@ -147,24 +234,6 @@ export default function CreateRoomPage() {
             <FontAwesomeIcon icon={faRocket} />
             {isCreating ? 'Membuat Room...' : 'Buat Room'}
           </button>
-        </div>
-
-        {/* Features */}
-        <div className="grid grid-cols-2 gap-4 mt-8">
-          <div className="bg-gray-800/50 p-4 rounded-xl text-center">
-            <div className="text-2xl mb-1 text-orange-400">
-              <FontAwesomeIcon icon={faLink} />
-            </div>
-            <div className="text-white font-semibold text-sm">Kode Unik</div>
-            <div className="text-gray-400 text-xs">Share ke teman</div>
-          </div>
-          <div className="bg-gray-800/50 p-4 rounded-xl text-center">
-            <div className="text-2xl mb-1 text-yellow-400">
-              <FontAwesomeIcon icon={faBolt} />
-            </div>
-            <div className="text-white font-semibold text-sm">Real-time</div>
-            <div className="text-gray-400 text-xs">Sync otomatis</div>
-          </div>
         </div>
       </div>
     </main>

@@ -7,7 +7,7 @@ import { useKeyboardSound } from '@/hooks/useKeyboardSound';
 import { useTypingStore } from '@/store/typingStore';
 import { getRandomText } from '@/utils/textUtils';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faHome, faRotateRight } from '@fortawesome/free-solid-svg-icons';
+import { faHome, faRotateRight, faVolumeHigh, faVolumeXmark } from '@fortawesome/free-solid-svg-icons';
 
 type Mode = 'time' | 'words';
 type TimeOption = 15 | 30 | 60 | 120;
@@ -266,7 +266,7 @@ export default function PracticePage() {
               }`}
               title={soundEnabled ? 'Sound On' : 'Sound Off'}
             >
-              <span>{soundEnabled ? '🔊' : '🔇'}</span>
+              <FontAwesomeIcon icon={soundEnabled ? faVolumeHigh : faVolumeXmark} />
             </button>
             <button
               onClick={handleRestart}

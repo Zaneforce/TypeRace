@@ -9,7 +9,7 @@ import VirtualKeyboard from '@/components/VirtualKeyboard';
 import { useKeyboardSound } from '@/hooks/useKeyboardSound';
 import { calculateWPM, calculateAccuracy, getRandomText } from '@/utils/textUtils';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faHome, faUsers, faLink, faCheckCircle, faUser, faCrown, faTrophy, faRotateRight, faVolumeHigh, faVolumeXmark } from '@fortawesome/free-solid-svg-icons';
+import { faHome, faUsers, faLink, faCheckCircle, faUser, faCrown, faTrophy, faRotateRight, faVolumeHigh, faVolumeXmark, faGamepad, faRocket, faClock, faFileAlt } from '@fortawesome/free-solid-svg-icons';
 
 interface PlayerData {
   id: string;
@@ -29,6 +29,9 @@ interface RoomData {
   status: 'waiting' | 'playing' | 'finished';
   players: { [key: string]: PlayerData };
   maxPlayers: number;
+  mode: 'time' | 'words';
+  timeLimit: number;
+  wordLimit: number;
   createdAt: number;
   createdBy: string;
 }
@@ -44,9 +47,11 @@ export default function RoomPage({ params }: { params: { code: string } }) {
   const [userInput, setUserInput] = useState('');
   const [isStarted, setIsStarted] = useState(false);
   const [startTime, setStartTime] = useState<number>(0);
+  const [timeLeft, setTimeLeft] = useState<number>(0);
   const [copied, setCopied] = useState(false);
   const [showWinner, setShowWinner] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
   const hasJoinedRef = useRef(false);
   
   const roomCode = params.code.toUpperCase();
@@ -142,17 +147,63 @@ export default function RoomPage({ params }: { params: { code: string } }) {
       setUserInput('');
       setIsStarted(false);
       setStartTime(0);
+      setTimeLeft(room.timeLimit);
       setShowWinner(false);
       inputRef.current?.focus();
     }
-  }, [room?.status]);
+  }, [room?.status, room?.timeLimit]);
+
+  // Timer for time mode
+  useEffect(() => {
+    if (room?.mode === 'time' && room.status === 'playing' && isStarted) {
+      timerRef.current = setInterval(() => {
+        setTimeLeft((prev) => {
+          if (prev <= 1) {
+            // Time's up - finish the game
+            handleFinishGame();
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+
+      return () => {
+        if (timerRef.current) {
+          clearInterval(timerRef.current);
+        }
+      };
+    }
+  }, [room?.mode, room?.status, isStarted]);
 
   const handlePaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
     e.preventDefault();
   };
 
+  const handleStartGame = async () => {
+    if (!room || !user || room.createdBy !== user.uid) return;
+    
+    await update(ref(database, `customRooms/${roomCode}`), {
+      status: 'playing'
+    });
+  };
+
+  const handleFinishGame = async () => {
+    if (!room || !user) return;
+    
+    await update(ref(database, `customRooms/${roomCode}/players/${user.uid}`), {
+      isFinished: true,
+      finishTime: Date.now()
+    });
+  };
+
   const handleKeyDown = async (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (!room || !user) return;
+
+    // Only allow typing when game is playing
+    if (room.status !== 'playing') {
+      e.preventDefault();
+      return;
+    }
 
     if (!isStarted && e.key !== 'Tab') {
       setIsStarted(true);
@@ -163,13 +214,6 @@ export default function RoomPage({ params }: { params: { code: string } }) {
       await update(ref(database, `customRooms/${roomCode}/players/${user.uid}`), {
         startTime: now
       });
-
-      // Update room status to playing if still waiting
-      if (room.status === 'waiting') {
-        await update(ref(database, `customRooms/${roomCode}`), {
-          status: 'playing'
-        });
-      }
     }
 
     playKeySound();
@@ -204,7 +248,10 @@ export default function RoomPage({ params }: { params: { code: string } }) {
       accuracy = calculateAccuracy(correct, input.length);
     }
 
-    const isFinished = input.length >= room.text.length;
+    // Check finish condition based on mode
+    const isFinished = room.mode === 'words' 
+      ? input.length >= room.text.length
+      : false; // In time mode, finish is controlled by timer
 
     // Update player in Firebase
     const updateData: any = {
@@ -220,6 +267,18 @@ export default function RoomPage({ params }: { params: { code: string } }) {
     }
 
     await update(ref(database, `customRooms/${roomCode}/players/${user.uid}`), updateData);
+    
+    // Auto-generate more text in time mode when any player is close to finishing
+    if (room.mode === 'time' && room.status === 'playing' && room.createdBy === user.uid) {
+      const progressRatio = input.length / room.text.length;
+      // When any player has typed 80% of the text, add more text
+      if (progressRatio > 0.8) {
+        const newText = room.text + ' ' + getRandomText(100);
+        await update(ref(database, `customRooms/${roomCode}`), {
+          text: newText
+        });
+      }
+    }
   };
 
   const copyRoomLink = () => {
@@ -264,7 +323,8 @@ export default function RoomPage({ params }: { params: { code: string } }) {
     }
 
     // Reset room state
-    const newText = getRandomText();
+    const wordCount = room.mode === 'time' ? 200 : Math.max(room.wordLimit, 100);
+    const newText = getRandomText(wordCount);
     const resetPlayers: { [key: string]: any } = {};
     
     Object.values(room.players).forEach((player: any) => {
@@ -289,6 +349,7 @@ export default function RoomPage({ params }: { params: { code: string } }) {
     setUserInput('');
     setIsStarted(false);
     setStartTime(0);
+    setTimeLeft(room.timeLimit);
     setShowWinner(false);
     inputRef.current?.focus();
   };
@@ -395,11 +456,14 @@ export default function RoomPage({ params }: { params: { code: string } }) {
           
           <div className="text-center">
             <h1 className="text-yellow-500 text-2xl font-bold flex items-center justify-center gap-2">
-              <FontAwesomeIcon icon={faUsers} /> Room: {roomCode}
+              <FontAwesomeIcon icon={faUsers} /> {room?.name || 'Room'}
             </h1>
+            <div className="text-gray-500 text-sm mt-1">
+              Code: {roomCode}
+            </div>
             <button
               onClick={copyRoomLink}
-              className="text-gray-500 hover:text-yellow-400 transition-colors flex items-center gap-2 text-sm mx-auto mt-1"
+              className="text-gray-500 hover:text-yellow-400 transition-colors flex items-center gap-2 text-xs mx-auto mt-1"
             >
               <FontAwesomeIcon icon={faLink} />
               <span>{copied ? 'Link Copied!' : 'Share Room'}</span>
@@ -426,66 +490,214 @@ export default function RoomPage({ params }: { params: { code: string } }) {
       <div className="max-w-7xl mx-auto px-8 py-6 grid lg:grid-cols-4 gap-6">
         {/* Main Content */}
         <div className="lg:col-span-3">
-          {/* Stats */}
-          <div className="grid grid-cols-3 gap-4 mb-8">
-            <div className="bg-gray-800/50 p-4 rounded-lg border border-gray-700/50">
-              <div className="text-gray-500 text-xs mb-1">wpm</div>
-              <div className="text-yellow-500 text-3xl font-bold">{room?.players[user?.uid || '']?.wpm || 0}</div>
-            </div>
-            <div className="bg-gray-800/50 p-4 rounded-lg border border-gray-700/50">
-              <div className="text-gray-500 text-xs mb-1">accuracy</div>
-              <div className="text-yellow-500 text-3xl font-bold">{room?.players[user?.uid || '']?.accuracy || 100}%</div>
-            </div>
-            <div className="bg-gray-800/50 p-4 rounded-lg border border-gray-700/50">
-              <div className="text-gray-500 text-xs mb-1">progress</div>
-              <div className="text-yellow-500 text-3xl font-bold">
-                {Math.floor((userInput.length / (room?.text.length || 1)) * 100)}%
+          {/* Waiting Lobby */}
+          {room?.status === 'waiting' && (
+            <div className="bg-gray-800/50 border-2 border-yellow-500/30 rounded-xl p-8 mb-8 text-center">
+              <h2 className="text-3xl font-bold text-yellow-500 mb-4 flex items-center justify-center gap-3">
+                <FontAwesomeIcon icon={faGamepad} /> Waiting for Players...
+              </h2>
+              <p className="text-gray-400 mb-6">
+                {room.createdBy === user?.uid 
+                  ? 'Anda adalah host! Klik tombol Start ketika semua player sudah siap.'
+                  : 'Menunggu host untuk memulai permainan...'}
+              </p>
+              
+              {/* Mode Settings - Only for host */}
+              {room.createdBy === user?.uid && (
+                <div className="mb-6 space-y-4">
+                  <div>
+                    <label className="block text-white font-semibold mb-2">
+                      Mode Permainan
+                    </label>
+                    <div className="grid grid-cols-2 gap-3 max-w-md mx-auto">
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          await update(ref(database, `customRooms/${roomCode}`), { mode: 'time' });
+                        }}
+                        className={`py-3 px-4 rounded-lg font-semibold transition-all flex items-center justify-center gap-2 ${
+                          room.mode === 'time'
+                            ? 'bg-yellow-600 text-white border-2 border-yellow-400'
+                            : 'bg-gray-700 text-gray-300 border-2 border-gray-600 hover:border-gray-500'
+                        }`}
+                      >
+                        <FontAwesomeIcon icon={faClock} /> Waktu
+                      </button>
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          await update(ref(database, `customRooms/${roomCode}`), { mode: 'words' });
+                        }}
+                        className={`py-3 px-4 rounded-lg font-semibold transition-all flex items-center justify-center gap-2 ${
+                          room.mode === 'words'
+                            ? 'bg-yellow-600 text-white border-2 border-yellow-400'
+                            : 'bg-gray-700 text-gray-300 border-2 border-gray-600 hover:border-gray-500'
+                        }`}
+                      >
+                        <FontAwesomeIcon icon={faFileAlt} /> Kata
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Mode Value Settings */}
+                  {room.mode === 'time' ? (
+                    <div>
+                      <label className="block text-white font-semibold mb-2">
+                        Durasi: {room.timeLimit} detik
+                      </label>
+                      <div className="grid grid-cols-4 gap-2 max-w-md mx-auto">
+                        {[15, 30, 60, 120].map((time) => (
+                          <button
+                            key={time}
+                            type="button"
+                            onClick={async () => {
+                              await update(ref(database, `customRooms/${roomCode}`), { 
+                                timeLimit: time,
+                                text: getRandomText(200) 
+                              });
+                            }}
+                            className={`py-2 px-3 rounded-lg font-semibold transition-all ${
+                              room.timeLimit === time
+                                ? 'bg-yellow-600 text-white'
+                                : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                            }`}
+                          >
+                            {time}s
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    <div>
+                      <label className="block text-white font-semibold mb-2">
+                        Jumlah Kata: {room.wordLimit}
+                      </label>
+                      <div className="grid grid-cols-4 gap-2 max-w-md mx-auto">
+                        {[25, 50, 100, 200].map((words) => (
+                          <button
+                            key={words}
+                            type="button"
+                            onClick={async () => {
+                              await update(ref(database, `customRooms/${roomCode}`), { 
+                                wordLimit: words,
+                                text: getRandomText(Math.max(words, 100)) 
+                              });
+                            }}
+                            className={`py-2 px-3 rounded-lg font-semibold transition-all ${
+                              room.wordLimit === words
+                                ? 'bg-yellow-600 text-white'
+                                : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                            }`}
+                          >
+                            {words}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Current Settings Display */}
+              <div className="mb-6">
+                <div className="text-sm text-gray-500 mb-2">Game Settings:</div>
+                <div className="flex gap-4 justify-center">
+                  <div className="bg-gray-700/50 px-4 py-2 rounded-lg">
+                    <span className="text-gray-400">Mode: </span>
+                    <span className="text-yellow-400 font-semibold">
+                      {room.mode === 'time' ? `${room.timeLimit}s` : `${room.wordLimit} words`}
+                    </span>
+                  </div>
+                  <div className="bg-gray-700/50 px-4 py-2 rounded-lg">
+                    <span className="text-gray-400">Players: </span>
+                    <span className="text-yellow-400 font-semibold">
+                      {Object.keys(room.players || {}).length}/{room.maxPlayers}
+                    </span>
+                  </div>
+                </div>
               </div>
-            </div>
-          </div>
 
-          {/* Text Display */}
-          <div className="mb-8 mt-16">
-            <div 
-              className="text-left px-4 max-w-4xl mx-auto overflow-hidden cursor-text"
-              onClick={() => inputRef.current?.focus()}
-              style={{ 
-                fontSize: '2rem',
-                letterSpacing: '0.02em',
-                wordSpacing: '0.5em',
-                lineHeight: '1.8',
-                height: '10.8rem',
-                position: 'relative'
-              }}
-            >
-              <div style={{ 
-                position: 'relative',
-                padding: '0 1rem'
-              }}>
-                {renderText()}
+              {room.createdBy === user?.uid && (
+                <button
+                  onClick={handleStartGame}
+                  disabled={Object.keys(room.players || {}).length < 1}
+                  className="bg-gradient-to-r from-yellow-600 to-orange-600 hover:from-yellow-500 hover:to-orange-500 disabled:from-gray-600 disabled:to-gray-700 text-white font-bold py-4 px-8 rounded-xl transition-all transform hover:scale-105 disabled:scale-100 disabled:cursor-not-allowed text-lg flex items-center gap-2 mx-auto"
+                >
+                  <FontAwesomeIcon icon={faRocket} /> Start Game
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* Game UI - Only show when playing or finished */}
+          {(room?.status === 'playing' || room?.status === 'finished') && (
+            <>
+              {/* Stats */}
+              <div className="grid grid-cols-3 gap-4 mb-8">
+                <div className="bg-gray-800/50 p-4 rounded-lg border border-gray-700/50">
+                  <div className="text-gray-500 text-xs mb-1">wpm</div>
+                  <div className="text-yellow-500 text-3xl font-bold">{room?.players[user?.uid || '']?.wpm || 0}</div>
+                </div>
+                <div className="bg-gray-800/50 p-4 rounded-lg border border-gray-700/50">
+                  <div className="text-gray-500 text-xs mb-1">accuracy</div>
+                  <div className="text-yellow-500 text-3xl font-bold">{room?.players[user?.uid || '']?.accuracy || 100}%</div>
+                </div>
+                <div className="bg-gray-800/50 p-4 rounded-lg border border-gray-700/50">
+                  <div className="text-gray-500 text-xs mb-1">
+                    {room.mode === 'time' ? 'time left' : 'progress'}
+                  </div>
+                  <div className="text-yellow-500 text-3xl font-bold">
+                    {room.mode === 'time' 
+                      ? `${timeLeft}s`
+                      : `${Math.floor((userInput.length / (room?.text.length || 1)) * 100)}%`}
+                  </div>
+                </div>
               </div>
-            </div>
 
-            {/* Hidden Input */}
-            <input
-              ref={inputRef}
-              type="text"
-              value={userInput}
-              onChange={handleInputChange}
-              onKeyDown={handleKeyDown}
-              onPaste={handlePaste}
-              disabled={room?.players[user?.uid || '']?.isFinished}
-              className="w-full bg-transparent text-transparent caret-transparent outline-none border-none"
-              style={{
-                position: 'absolute',
-                left: '-9999px'
-              }}
-              autoFocus
-            />
-          </div>
+              {/* Text Display */}
+              <div className="mb-8 mt-16">
+                <div 
+                  className="text-left px-4 max-w-4xl mx-auto overflow-hidden cursor-text"
+                  onClick={() => inputRef.current?.focus()}
+                  style={{ 
+                    fontSize: '2rem',
+                    letterSpacing: '0.02em',
+                    wordSpacing: '0.5em',
+                    lineHeight: '1.8',
+                    height: '10.8rem',
+                    position: 'relative'
+                  }}
+                >
+                  <div style={{ 
+                    position: 'relative',
+                    padding: '0 1rem'
+                  }}>
+                    {renderText()}
+                  </div>
+                </div>
 
-          {/* Virtual Keyboard */}
-          <VirtualKeyboard pressedKey={pressedKey} showKeyboard={true} />
+                {/* Hidden Input */}
+                <input
+                  ref={inputRef}
+                  type="text"
+                  value={userInput}
+                  onChange={handleInputChange}
+                  onKeyDown={handleKeyDown}
+                  onPaste={handlePaste}
+                  disabled={room?.players[user?.uid || '']?.isFinished || room?.status !== 'playing'}
+                  className="w-full bg-transparent text-transparent caret-transparent outline-none border-none"
+                  style={{
+                    position: 'absolute',
+                    left: '-9999px'
+                  }}
+                  autoFocus
+                />
+              </div>
+
+              {/* Virtual Keyboard */}
+              <VirtualKeyboard pressedKey={pressedKey} showKeyboard={true} />
+            </>
+          )}
         </div>
 
         {/* Leaderboard Sidebar */}
@@ -572,12 +784,12 @@ export default function RoomPage({ params }: { params: { code: string } }) {
       {/* Winner Modal */}
       {showWinner && room && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50">
-          <div className="bg-gray-800 rounded-2xl p-8 max-w-md w-full mx-4 border-2 border-yellow-500/50 shadow-2xl">
+          <div className="bg-gray-800 rounded-2xl p-8 max-w-2xl w-full mx-4 border-2 border-yellow-500/50 shadow-2xl">
             <div className="text-center">
               <div className="mb-4">
                 <FontAwesomeIcon icon={faTrophy} className="text-yellow-500 text-6xl" />
               </div>
-              <h2 className="text-3xl font-bold text-yellow-500 mb-2">Game Selesai!</h2>
+              <h2 className="text-3xl font-bold text-yellow-500 mb-6">Game Selesai!</h2>
               
               {(() => {
                 const sortedPlayers = Object.values(room.players)
@@ -587,30 +799,77 @@ export default function RoomPage({ params }: { params: { code: string } }) {
                     score: p.wpm * (p.accuracy / 100)
                   }))
                   .sort((a: any, b: any) => b.score - a.score);
-                const winner = sortedPlayers[0] as any;
+                
+                const topThree = sortedPlayers.slice(0, 3);
                 
                 return (
                   <>
-                    <p className="text-gray-300 text-lg mb-6">
-                      Pemenang: <span className="text-yellow-500 font-bold">{winner?.name}</span>
-                    </p>
-                    
-                    <div className="bg-gray-700/50 rounded-lg p-4 mb-6">
-                      <div className="grid grid-cols-3 gap-4 text-sm">
-                        <div>
-                          <div className="text-gray-500">WPM</div>
-                          <div className="text-yellow-500 text-2xl font-bold">{winner?.wpm}</div>
+                    {/* Podium Display */}
+                    <div className="flex items-end justify-center gap-4 mb-8">
+                      {/* 2nd Place */}
+                      {topThree[1] && (
+                        <div className="flex flex-col items-center">
+                          <div className="text-4xl mb-2">🥈</div>
+                          <div className="bg-gradient-to-b from-gray-600 to-gray-700 rounded-t-lg p-4 w-32 text-center border-2 border-gray-500">
+                            <div className="text-white font-bold text-sm mb-1">{topThree[1].name}</div>
+                            <div className="text-gray-300 text-xs mb-1">{topThree[1].wpm} WPM</div>
+                            <div className="text-gray-400 text-xs">{topThree[1].accuracy}%</div>
+                          </div>
+                          <div className="bg-gray-600 w-32 h-20 rounded-b-lg flex items-center justify-center">
+                            <span className="text-white font-bold text-2xl">2</span>
+                          </div>
                         </div>
-                        <div>
-                          <div className="text-gray-500">Accuracy</div>
-                          <div className="text-yellow-500 text-2xl font-bold">{winner?.accuracy}%</div>
+                      )}
+                      
+                      {/* 1st Place */}
+                      {topThree[0] && (
+                        <div className="flex flex-col items-center -mt-8">
+                          <div className="text-5xl mb-2">🏆</div>
+                          <div className="bg-gradient-to-b from-yellow-500 to-yellow-600 rounded-t-lg p-4 w-36 text-center border-2 border-yellow-400">
+                            <div className="text-gray-900 font-bold mb-1">{topThree[0].name}</div>
+                            <div className="text-gray-800 text-sm mb-1">{topThree[0].wpm} WPM</div>
+                            <div className="text-gray-700 text-sm">{topThree[0].accuracy}%</div>
+                          </div>
+                          <div className="bg-yellow-600 w-36 h-28 rounded-b-lg flex items-center justify-center">
+                            <span className="text-white font-bold text-3xl">1</span>
+                          </div>
                         </div>
-                        <div>
-                          <div className="text-gray-500">Score</div>
-                          <div className="text-yellow-500 text-2xl font-bold">{Math.round(winner?.score || 0)}</div>
+                      )}
+                      
+                      {/* 3rd Place */}
+                      {topThree[2] && (
+                        <div className="flex flex-col items-center">
+                          <div className="text-4xl mb-2">🥉</div>
+                          <div className="bg-gradient-to-b from-orange-700 to-orange-800 rounded-t-lg p-4 w-32 text-center border-2 border-orange-600">
+                            <div className="text-white font-bold text-sm mb-1">{topThree[2].name}</div>
+                            <div className="text-orange-200 text-xs mb-1">{topThree[2].wpm} WPM</div>
+                            <div className="text-orange-300 text-xs">{topThree[2].accuracy}%</div>
+                          </div>
+                          <div className="bg-orange-700 w-32 h-16 rounded-b-lg flex items-center justify-center">
+                            <span className="text-white font-bold text-2xl">3</span>
+                          </div>
                         </div>
-                      </div>
+                      )}
                     </div>
+
+                    {/* All Players Ranking */}
+                    {sortedPlayers.length > 3 && (
+                      <div className="bg-gray-700/50 rounded-lg p-4 mb-6 max-h-48 overflow-y-auto">
+                        <div className="text-gray-400 text-xs mb-2">Ranking Lengkap:</div>
+                        {sortedPlayers.slice(3).map((player: any, idx: number) => (
+                          <div key={player.id} className="flex justify-between items-center py-2 border-b border-gray-600 last:border-0">
+                            <div className="flex items-center gap-2">
+                              <span className="text-gray-500 font-bold">#{idx + 4}</span>
+                              <span className="text-white text-sm">{player.name}</span>
+                            </div>
+                            <div className="flex gap-4 text-xs">
+                              <span className="text-yellow-400">{player.wpm} WPM</span>
+                              <span className="text-gray-400">{player.accuracy}%</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </>
                 );
               })()}
