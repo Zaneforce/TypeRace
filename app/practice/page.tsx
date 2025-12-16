@@ -35,6 +35,11 @@ export default function PracticePage() {
   const inputRef = useRef<HTMLInputElement>(null);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   
+  // Refs to store latest values for saveSession
+  const userInputRef = useRef<string>('');
+  const currentTextRef = useRef<string>('');
+  const startTimeRef = useRef<number>(0);
+  
   const {
     currentText,
     userInput,
@@ -48,6 +53,13 @@ export default function PracticePage() {
     resetTyping,
   } = useTypingStore();
 
+  // Update refs whenever values change
+  useEffect(() => {
+    userInputRef.current = userInput;
+    currentTextRef.current = currentText;
+    startTimeRef.current = startTime;
+  }, [userInput, currentText, startTime]);
+
   useEffect(() => {
     const wordCount = mode === 'words' ? Math.max(wordLimit, 50) : 100;
     setCurrentText(getRandomText(wordCount, language));
@@ -55,17 +67,72 @@ export default function PracticePage() {
   }, [setCurrentText, mode, wordLimit, language]);
 
   // Save session to Firebase
-  const saveSession = async () => {
+  const saveSession = async (inputText?: string, textToCompare?: string, sessionStartTime?: number) => {
     if (!user) return;
 
-    const duration = mode === 'time' ? timeLimit : Math.floor((Date.now() - startTime) / 1000);
-    const wordCount = userInput.trim().split(/\s+/).length;
+    // Use passed parameters or current state
+    const finalInput = inputText || userInput;
+    const finalText = textToCompare || currentText;
+    const finalStartTime = sessionStartTime || startTime;
+
+    // Ensure we have valid data
+    if (!finalInput || finalInput.length === 0) {
+      console.warn('Cannot save session: userInput is empty');
+      return;
+    }
+
+    if (!finalStartTime || finalStartTime === 0) {
+      console.warn('Cannot save session: startTime is not set');
+      return;
+    }
+
+    const duration = mode === 'time' ? timeLimit : Math.floor((Date.now() - finalStartTime) / 1000);
+    
+    // Calculate accurate word count and stats
+    let correct = 0;
+    let incorrect = 0;
+    for (let i = 0; i < finalInput.length; i++) {
+      if (finalInput[i] === finalText[i]) {
+        correct++;
+      } else {
+        incorrect++;
+      }
+    }
+    
+    const totalChars = finalInput.length;
+    const accuracy = totalChars > 0 ? (correct / totalChars) * 100 : 100;
+    
+    // Calculate WPM based on actual duration
+    const timeElapsed = duration / 60; // in minutes
+    const wordsTyped = correct / 5; // only count correct characters for WPM
+    const wpm = timeElapsed > 0 ? Math.round(wordsTyped / timeElapsed) : 0;
+    
+    // Calculate actual word count (words that were typed correctly)
+    const words = finalInput.trim().split(/\s+/);
+    const targetWords = finalText.trim().split(/\s+/);
+    let correctWords = 0;
+    for (let i = 0; i < words.length && i < targetWords.length; i++) {
+      if (words[i] === targetWords[i]) {
+        correctWords++;
+      }
+    }
+    const wordCount = correctWords;
+
+    console.log('Saving practice session:', {
+      wpm,
+      accuracy: Math.round(accuracy),
+      wordCount,
+      duration,
+      correct,
+      totalChars,
+      userInputLength: finalInput.length
+    });
 
     const session: TypingSession = {
       id: Date.now().toString(),
       userId: user.uid,
-      wpm: Math.round(stats.wpm),
-      accuracy: Math.round(stats.accuracy),
+      wpm: Math.max(wpm, 0), // Ensure WPM is not negative
+      accuracy: Math.round(accuracy),
       mode: mode,
       duration: duration,
       wordCount: wordCount,
@@ -109,9 +176,9 @@ export default function PracticePage() {
           userId: user.uid,
           username: user.displayName || user.email || 'Anonymous',
           totalTests: 1,
-          averageWpm: Math.round(stats.wpm),
-          bestWpm: Math.round(stats.wpm),
-          averageAccuracy: Math.round(stats.accuracy),
+          averageWpm: wpm,
+          bestWpm: wpm,
+          averageAccuracy: Math.round(accuracy),
           totalTimeTyping: duration,
           lastPlayed: Date.now(),
           sessions: [session]
@@ -123,8 +190,8 @@ export default function PracticePage() {
       const leaderboardEntry = {
         userId: user.uid,
         username: user.displayName || user.email || 'Anonymous',
-        wpm: Math.round(stats.wpm),
-        accuracy: Math.round(stats.accuracy),
+        wpm: wpm,
+        accuracy: Math.round(accuracy),
         wordCount: wordCount,
         timestamp: Date.now()
       };
@@ -133,8 +200,14 @@ export default function PracticePage() {
       const dailyRef = push(ref(database, 'leaderboard/daily'));
       await set(dailyRef, leaderboardEntry);
 
-      // Update all-time leaderboard (only if it's a new personal best)
-      if (!currentStats || Math.round(stats.wpm) >= currentStats.bestWpm) {
+      // Calculate competitive score
+      const competitiveScore = wpm * (accuracy / 100) * Math.sqrt(wordCount);
+      const currentBestScore = currentStats 
+        ? currentStats.bestWpm * (currentStats.bestAccuracy / 100) * Math.sqrt(currentStats.totalWords)
+        : 0;
+
+      // Update all-time leaderboard (only if it's a new competitive best)
+      if (!currentStats || competitiveScore > currentBestScore) {
         const allTimeRef = push(ref(database, 'leaderboard/alltime'));
         await set(allTimeRef, leaderboardEntry);
       }
@@ -146,18 +219,26 @@ export default function PracticePage() {
   useEffect(() => {
     if (mode === 'words') {
       if (userInput.length === currentText.length && currentText.length > 0) {
+        // Capture current values BEFORE finishTyping
+        const capturedInput = userInput;
+        const capturedText = currentText;
+        const capturedStartTime = startTime;
         finishTyping();
-        saveSession();
+        saveSession(capturedInput, capturedText, capturedStartTime);
       }
     } else if (mode === 'sudden-death') {
       // Check if reached the end
       if (userInput.length === currentText.length && currentText.length > 0) {
+        // Capture current values BEFORE finishTyping
+        const capturedInput = userInput;
+        const capturedText = currentText;
+        const capturedStartTime = startTime;
         finishTyping();
-        saveSession();
+        saveSession(capturedInput, capturedText, capturedStartTime);
       }
     }
     // In time mode, don't finish when text ends - just keep going with auto-generated text
-  }, [userInput, currentText, finishTyping, mode]);
+  }, [userInput, currentText, finishTyping, mode, startTime]);
 
   // Timer for time mode
   useEffect(() => {
@@ -165,8 +246,13 @@ export default function PracticePage() {
       timerRef.current = setInterval(() => {
         setTimeLeft((prev) => {
           if (prev <= 1) {
+            // Use refs to get the latest values
+            const currentInput = userInputRef.current;
+            const currentFullText = currentTextRef.current;
+            const currentStart = startTimeRef.current;
             finishTyping();
-            saveSession();
+            // Call saveSession with the captured values from refs
+            saveSession(currentInput, currentFullText, currentStart);
             return 0;
           }
           return prev - 1;
@@ -228,8 +314,12 @@ export default function PracticePage() {
       
       if (typedChar !== nextChar) {
         // Wrong character - instant game over
+        // Capture current values BEFORE finishTyping
+        const capturedText = currentText;
+        const capturedStartTime = startTime;
         finishTyping();
-        saveSession();
+        // Save current input (the one with the mistake) before it changes
+        saveSession(input, capturedText, capturedStartTime);
         return;
       }
       
@@ -382,28 +472,30 @@ export default function PracticePage() {
   return (
     <main className="min-h-screen bg-[#1a1a1a] text-gray-300" onClick={() => inputRef.current?.focus()}>
       {/* Header */}
-      <div className="max-w-7xl mx-auto px-8 py-6">
-        <div className="flex justify-between items-center">
+      <div className="border-b border-gray-800">
+        <div className="max-w-7xl mx-auto px-8 py-6">
           <button
             onClick={() => router.push('/')}
-            className="text-gray-500 hover:text-yellow-500 transition-colors flex items-center gap-2 text-sm font-medium"
+            className="text-gray-500 hover:text-yellow-500 transition-colors flex items-center gap-2 text-sm font-medium mb-4"
           >
-            <span>← Home</span>
+            <FontAwesomeIcon icon={faHome} />
+            <span>Home</span>
           </button>
-          <h1 className="text-2xl font-bold text-yellow-500">
-            Practice Mode
-          </h1>
-          <div className="flex items-center gap-4">
-            <button
-              onClick={() => setLanguage(language === 'en' ? 'id' : 'en')}
-              className="text-gray-500 hover:text-yellow-500 transition-colors flex items-center gap-2 text-sm font-medium"
-              title={language === 'en' ? 'Switch to Indonesian' : 'Switch to English'}
-            >
-              <FontAwesomeIcon icon={faGlobe} />
-              <span className="uppercase">{language}</span>
-            </button>
-            <button
-              onClick={toggleSound}
+          <div className="flex justify-between items-center">
+            <h1 className="text-3xl font-bold text-yellow-500">
+              Practice Mode
+            </h1>
+            <div className="flex items-center gap-4">
+              <button
+                onClick={() => setLanguage(language === 'en' ? 'id' : 'en')}
+                className="text-gray-500 hover:text-yellow-500 transition-colors flex items-center gap-2 text-sm font-medium"
+                title={language === 'en' ? 'Switch to Indonesian' : 'Switch to English'}
+              >
+                <FontAwesomeIcon icon={faGlobe} />
+                <span className="uppercase">{language}</span>
+              </button>
+              <button
+                onClick={toggleSound}
               className={`text-sm font-medium transition-colors flex items-center gap-2 ${
                 soundEnabled ? 'text-yellow-500 hover:text-yellow-400' : 'text-gray-500 hover:text-gray-400'
               }`}
@@ -421,6 +513,7 @@ export default function PracticePage() {
           </div>
         </div>
       </div>
+    </div>
 
       {/* Main Content */}
       <div className="max-w-7xl mx-auto px-8 py-12">

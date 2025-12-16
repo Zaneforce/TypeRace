@@ -181,7 +181,10 @@ export default function ProfilePage() {
                       </div>
                     </div>
                   </div>
-                  <div className="text-gray-400 text-xs">
+                  <div className="text-gray-400 text-xs w-20 text-center">
+                    {session.accuracy}% · {session.wordCount || 0}w
+                  </div>
+                  <div className="text-gray-400 text-xs w-24">
                     {new Date(session.timestamp).toLocaleDateString()}
                   </div>
                 </div>
@@ -219,9 +222,10 @@ export default function ProfilePage() {
                         {new Date(session.timestamp).toLocaleString()}
                       </div>
                     </div>
-                    <div className="flex gap-4">
-                      <div className="text-yellow-500 font-bold">{session.wpm} WPM</div>
-                      <div className="text-gray-400">{session.accuracy}%</div>
+                    <div className="flex gap-4 text-sm">
+                      <div className="text-yellow-500 font-bold">{session.wpm} <span className="text-xs text-gray-400">WPM</span></div>
+                      <div className="text-gray-400">{session.accuracy}% <span className="text-xs">acc</span></div>
+                      <div className="text-gray-400">{session.wordCount || 0} <span className="text-xs">words</span></div>
                     </div>
                   </div>
                 ))}

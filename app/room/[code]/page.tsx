@@ -58,6 +58,26 @@ export default function RoomPage({ params }: { params: { code: string } }) {
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const hasJoinedRef = useRef(false);
   
+  // Refs to store latest values for saveSession
+  const userInputRef = useRef<string>('');
+  const startTimeRef = useRef<number>(0);
+  
+  // Update refs whenever values change
+  useEffect(() => {
+    userInputRef.current = userInput;
+    startTimeRef.current = startTime;
+  }, [userInput, startTime]);
+
+  // Competitive scoring formula for winner selection
+  const calculatePlayerScore = (player: PlayerData): number => {
+    // Use completedWords if available (for sudden death), otherwise estimate from progress
+    const wordCount = player.completedWords || Math.max(1, Math.floor(player.progress / 10));
+    // Score = WPM * (Accuracy/100) * sqrt(wordCount)
+    const accuracyMultiplier = player.accuracy / 100;
+    const wordBonus = Math.sqrt(wordCount);
+    return player.wpm * accuracyMultiplier * wordBonus;
+  };
+  
   const roomCode = params.code.toUpperCase();
   const isHost = searchParams.get('host') === 'true';
 
@@ -116,12 +136,12 @@ export default function RoomPage({ params }: { params: { code: string } }) {
         
         if (allFinished && players.length > 0) {
           if (data.status !== 'finished') {
-            // Find winner based on score (WPM * Accuracy)
+            // Find winner based on competitive score
             const sortedPlayers = players
               .filter((p: PlayerData) => p.isFinished)
               .map((p: PlayerData) => ({
                 ...p,
-                score: p.wpm * (p.accuracy / 100)
+                score: calculatePlayerScore(p)
               }))
               .sort((a, b) => b.score - a.score);
             
@@ -194,33 +214,86 @@ export default function RoomPage({ params }: { params: { code: string } }) {
   const handleFinishGame = async () => {
     if (!room || !user) return;
     
+    // Capture current values from refs
+    const currentInput = userInputRef.current;
+    const currentStart = startTimeRef.current;
+    
     await update(ref(database, `customRooms/${roomCode}/players/${user.uid}`), {
       isFinished: true,
       finishTime: Date.now()
     });
 
-    // Save session to Firebase
-    await saveSession();
+    // Save session to Firebase with captured data
+    await saveSession(currentInput, room.text, currentStart);
   };
 
   // Save session to Firebase
-  const saveSession = async () => {
+  const saveSession = async (inputText?: string, textToCompare?: string, sessionStartTime?: number) => {
     if (!user || !room) return;
 
     const currentPlayerData = room.players[user.uid];
     if (!currentPlayerData) return;
 
-    const playerStartTime = startTime || currentPlayerData.startTime;
+    const playerStartTime = sessionStartTime || startTime || currentPlayerData.startTime;
     if (!playerStartTime) return;
 
+    // Use passed parameters or current state
+    const finalInput = inputText || userInput;
+    const finalText = textToCompare || room.text;
+
+    // Ensure we have valid data
+    if (!finalInput || finalInput.length === 0) {
+      console.warn('Cannot save session: userInput is empty');
+      return;
+    }
+
     const duration = Math.floor((Date.now() - playerStartTime) / 1000);
-    const wordCount = userInput.trim().split(/\s+/).length;
+    
+    // Calculate accurate stats
+    let correct = 0;
+    let incorrect = 0;
+    for (let i = 0; i < finalInput.length; i++) {
+      if (finalInput[i] === finalText[i]) {
+        correct++;
+      } else {
+        incorrect++;
+      }
+    }
+    
+    const totalChars = finalInput.length;
+    const accuracy = totalChars > 0 ? (correct / totalChars) * 100 : 100;
+    
+    // Calculate WPM based on correct characters
+    const timeElapsed = duration / 60; // in minutes
+    const wordsTyped = correct / 5; // only count correct characters for WPM
+    const wpm = timeElapsed > 0 ? Math.round(wordsTyped / timeElapsed) : 0;
+    
+    // Calculate actual word count (words that were typed correctly)
+    const words = finalInput.trim().split(/\s+/);
+    const targetWords = finalText.trim().split(/\s+/);
+    let correctWords = 0;
+    for (let i = 0; i < words.length && i < targetWords.length; i++) {
+      if (words[i] === targetWords[i]) {
+        correctWords++;
+      }
+    }
+    const wordCount = correctWords;
+
+    console.log('Saving custom room session:', {
+      wpm,
+      accuracy: Math.round(accuracy),
+      wordCount,
+      duration,
+      correct,
+      totalChars,
+      userInputLength: finalInput.length
+    });
 
     const session: TypingSession = {
       id: Date.now().toString(),
       userId: user.uid,
-      wpm: Math.round(currentPlayerData.wpm),
-      accuracy: Math.round(currentPlayerData.accuracy),
+      wpm: Math.max(wpm, 0), // Ensure WPM is not negative
+      accuracy: Math.round(accuracy),
       mode: room.mode,
       duration: duration,
       wordCount: wordCount,
@@ -264,9 +337,9 @@ export default function RoomPage({ params }: { params: { code: string } }) {
           userId: user.uid,
           username: user.displayName || user.email || 'Anonymous',
           totalTests: 1,
-          averageWpm: Math.round(currentPlayerData.wpm),
-          bestWpm: Math.round(currentPlayerData.wpm),
-          averageAccuracy: Math.round(currentPlayerData.accuracy),
+          averageWpm: wpm,
+          bestWpm: wpm,
+          averageAccuracy: Math.round(accuracy),
           totalTimeTyping: duration,
           lastPlayed: Date.now(),
           sessions: [session]
@@ -278,8 +351,8 @@ export default function RoomPage({ params }: { params: { code: string } }) {
       const leaderboardEntry = {
         userId: user.uid,
         username: user.displayName || user.email || 'Anonymous',
-        wpm: Math.round(currentPlayerData.wpm),
-        accuracy: Math.round(currentPlayerData.accuracy),
+        wpm: wpm,
+        accuracy: Math.round(accuracy),
         wordCount: wordCount,
         timestamp: Date.now()
       };
@@ -288,8 +361,14 @@ export default function RoomPage({ params }: { params: { code: string } }) {
       const dailyRef = push(ref(database, 'leaderboard/daily'));
       await set(dailyRef, leaderboardEntry);
 
-      // Update all-time leaderboard (only if it's a new personal best)
-      if (!currentStats || Math.round(currentPlayerData.wpm) >= currentStats.bestWpm) {
+      // Calculate competitive score
+      const competitiveScore = wpm * (accuracy / 100) * Math.sqrt(wordCount);
+      const currentBestScore = currentStats 
+        ? currentStats.bestWpm * (currentStats.bestAccuracy / 100) * Math.sqrt(currentStats.totalWords)
+        : 0;
+
+      // Update all-time leaderboard (only if it's a new competitive best)
+      if (!currentStats || competitiveScore > currentBestScore) {
         const allTimeRef = push(ref(database, 'leaderboard/alltime'));
         await set(allTimeRef, leaderboardEntry);
       }
@@ -386,8 +465,11 @@ export default function RoomPage({ params }: { params: { code: string } }) {
     if (isFinished && !room.players[user.uid]?.isFinished) {
       updateData.finishTime = Date.now();
       
-      // Save session when player finishes
-      setTimeout(() => saveSession(), 100);
+      // Save session when player finishes with current data
+      const currentInput = input;
+      const currentText = room.text;
+      const currentStart = startTime;
+      setTimeout(() => saveSession(currentInput, currentText, currentStart), 100);
     }
 
     await update(ref(database, `customRooms/${roomCode}/players/${user.uid}`), updateData);
@@ -1033,7 +1115,7 @@ export default function RoomPage({ params }: { params: { code: string } }) {
                   .filter((p: any) => p.isFinished)
                   .map((p: any) => ({
                     ...p,
-                    score: p.wpm * (p.accuracy / 100)
+                    score: calculatePlayerScore(p)
                   }))
                   .sort((a: any, b: any) => b.score - a.score);
                 

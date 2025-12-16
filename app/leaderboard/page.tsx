@@ -15,6 +15,16 @@ export default function LeaderboardPage() {
   const [activeTab, setActiveTab] = useState<'daily' | 'alltime'>('daily');
   const [loading, setLoading] = useState(true);
 
+  // Competitive scoring formula
+  const calculateScore = (entry: LeaderboardEntry): number => {
+    // Score = WPM * (Accuracy/100) * sqrt(wordCount)
+    // sqrt(wordCount) memberikan bonus untuk word count tapi tidak terlalu dominan
+    // Accuracy sebagai multiplier memastikan akurasi penting
+    const accuracyMultiplier = entry.accuracy / 100;
+    const wordBonus = Math.sqrt(entry.wordCount);
+    return entry.wpm * accuracyMultiplier * wordBonus;
+  };
+
   useEffect(() => {
     // Get daily leaderboard (last 24 hours)
     const dailyRef = ref(database, 'leaderboard/daily');
@@ -25,21 +35,29 @@ export default function LeaderboardPage() {
         const now = Date.now();
         const oneDayAgo = now - 24 * 60 * 60 * 1000;
         
-        // Filter untuk 24 jam terakhir
-        const recentEntries = entries.filter(e => e.timestamp > oneDayAgo);
+        // Filter untuk 24 jam terakhir dan filter invalid entries
+        const recentEntries = entries.filter(e => 
+          e.timestamp > oneDayAgo && 
+          e.wpm > 0 && // Only show entries with WPM > 0
+          e.wordCount > 0 && // Only show entries with word count > 0
+          e.accuracy > 0 // Only show entries with accuracy > 0
+        );
         
-        // Group by userId dan ambil WPM tertinggi per user
+        // Group by userId dan ambil score tertinggi per user
         const userBestMap = new Map<string, LeaderboardEntry>();
         recentEntries.forEach(entry => {
           const existing = userBestMap.get(entry.userId);
-          if (!existing || entry.wpm > existing.wpm) {
+          const currentScore = calculateScore(entry);
+          const existingScore = existing ? calculateScore(existing) : 0;
+          
+          if (!existing || currentScore > existingScore) {
             userBestMap.set(entry.userId, entry);
           }
         });
         
-        // Convert map ke array dan sort
+        // Convert map ke array dan sort by competitive score
         const filtered = Array.from(userBestMap.values())
-          .sort((a, b) => b.wpm - a.wpm)
+          .sort((a, b) => calculateScore(b) - calculateScore(a))
           .slice(0, 100);
         
         setDailyLeaderboard(filtered);
@@ -54,18 +72,28 @@ export default function LeaderboardPage() {
       if (data) {
         const entries = Object.values(data) as LeaderboardEntry[];
         
-        // Group by userId dan ambil WPM tertinggi per user
+        // Filter invalid entries
+        const validEntries = entries.filter(e => 
+          e.wpm > 0 && // Only show entries with WPM > 0
+          e.wordCount > 0 && // Only show entries with word count > 0
+          e.accuracy > 0 // Only show entries with accuracy > 0
+        );
+        
+        // Group by userId dan ambil score tertinggi per user
         const userBestMap = new Map<string, LeaderboardEntry>();
-        entries.forEach(entry => {
+        validEntries.forEach(entry => {
           const existing = userBestMap.get(entry.userId);
-          if (!existing || entry.wpm > existing.wpm) {
+          const currentScore = calculateScore(entry);
+          const existingScore = existing ? calculateScore(existing) : 0;
+          
+          if (!existing || currentScore > existingScore) {
             userBestMap.set(entry.userId, entry);
           }
         });
         
-        // Convert map ke array dan sort
+        // Convert map ke array dan sort by competitive score
         const sorted = Array.from(userBestMap.values())
-          .sort((a, b) => b.wpm - a.wpm)
+          .sort((a, b) => calculateScore(b) - calculateScore(a))
           .slice(0, 100);
         
         setAllTimeLeaderboard(sorted);
@@ -163,6 +191,7 @@ export default function LeaderboardPage() {
           <div className="space-y-3">
             {currentLeaderboard.map((entry, idx) => {
               const rank = idx + 1;
+              const score = calculateScore(entry);
               return (
                 <div
                   key={idx}
@@ -183,11 +212,14 @@ export default function LeaderboardPage() {
                       </div>
                     </div>
                     <div className="text-right">
-                      <div className="text-yellow-500 font-bold text-2xl">
-                        {entry.wpm} <span className="text-sm text-gray-400">WPM</span>
+                      <div className="text-yellow-500 font-bold text-xl mb-1">
+                        {score.toFixed(1)} <span className="text-xs text-gray-400">pts</span>
                       </div>
-                      <div className="text-gray-400 text-sm">
-                        {entry.accuracy}% accuracy · {entry.wordCount || 0} words
+                      <div className="text-sm mb-1">
+                        <span className="text-yellow-400">{entry.wpm}</span> <span className="text-gray-500 text-xs">WPM</span>
+                      </div>
+                      <div className="text-gray-400 text-xs">
+                        {entry.accuracy}% acc · {entry.wordCount} words
                       </div>
                     </div>
                   </div>
