@@ -9,7 +9,7 @@ import VirtualKeyboard from '@/components/VirtualKeyboard';
 import { useKeyboardSound } from '@/hooks/useKeyboardSound';
 import { calculateWPM, calculateAccuracy, getRandomText } from '@/utils/textUtils';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faHome, faUsers, faLink, faCheckCircle, faUser, faCrown, faTrophy, faRotateRight, faVolumeHigh, faVolumeXmark, faGamepad, faRocket, faClock, faFileAlt, faSkull } from '@fortawesome/free-solid-svg-icons';
+import { faHome, faUsers, faLink, faCheckCircle, faUser, faCrown, faTrophy, faRotateRight, faVolumeHigh, faVolumeXmark, faGamepad, faRocket, faClock, faFileAlt, faSkull, faGlobe } from '@fortawesome/free-solid-svg-icons';
 import { TypingSession, UserStats } from '@/types/stats';
 
 interface PlayerData {
@@ -21,12 +21,14 @@ interface PlayerData {
   isFinished: boolean;
   finishTime?: number;
   startTime?: number;
+  completedWords?: number;
 }
 
 interface RoomData {
   code: string;
   name: string;
   text: string;
+  language?: 'en' | 'id';
   status: 'waiting' | 'playing' | 'finished';
   players: { [key: string]: PlayerData };
   maxPlayers: number;
@@ -51,6 +53,7 @@ export default function RoomPage({ params }: { params: { code: string } }) {
   const [timeLeft, setTimeLeft] = useState<number>(0);
   const [copied, setCopied] = useState(false);
   const [showWinner, setShowWinner] = useState(false);
+  const [languageDropdownOpen, setLanguageDropdownOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const hasJoinedRef = useRef(false);
@@ -277,6 +280,7 @@ export default function RoomPage({ params }: { params: { code: string } }) {
         username: user.displayName || user.email || 'Anonymous',
         wpm: Math.round(currentPlayerData.wpm),
         accuracy: Math.round(currentPlayerData.accuracy),
+        wordCount: wordCount,
         timestamp: Date.now()
       };
 
@@ -360,9 +364,9 @@ export default function RoomPage({ params }: { params: { code: string } }) {
     }
 
     // Check finish condition based on mode
-    const isFinished = (room.mode === 'words' || room.mode === 'sudden-death')
+    const isFinished = room.mode === 'words'
       ? input.length >= room.text.length
-      : false; // In time mode, finish is controlled by timer
+      : false; // In time mode and sudden death, finish is controlled by timer or mistakes
 
     // Update player in Firebase
     const updateData: any = {
@@ -371,6 +375,12 @@ export default function RoomPage({ params }: { params: { code: string } }) {
       accuracy,
       isFinished,
     };
+    
+    // Track completed words in sudden death mode
+    if (room.mode === 'sudden-death') {
+      const completedWords = input.trim().split(/\s+/).filter(w => w.length > 0).length;
+      updateData.completedWords = completedWords;
+    }
 
     // Only add finishTime if the player just finished
     if (isFinished && !room.players[user.uid]?.isFinished) {
@@ -382,12 +392,13 @@ export default function RoomPage({ params }: { params: { code: string } }) {
 
     await update(ref(database, `customRooms/${roomCode}/players/${user.uid}`), updateData);
     
-    // Auto-generate more text in time mode when any player is close to finishing
-    if (room.mode === 'time' && room.status === 'playing' && room.createdBy === user.uid) {
+    // Auto-generate more text in time mode and sudden death mode when any player is close to finishing
+    if ((room.mode === 'time' || room.mode === 'sudden-death') && room.status === 'playing' && room.createdBy === user.uid) {
       const progressRatio = input.length / room.text.length;
       // When any player has typed 80% of the text, add more text
       if (progressRatio > 0.8) {
-        const newText = room.text + ' ' + getRandomText(100);
+        const roomLanguage = room.language || 'en';
+        const newText = room.text + ' ' + getRandomText(100, roomLanguage);
         await update(ref(database, `customRooms/${roomCode}`), {
           text: newText
         });
@@ -437,8 +448,11 @@ export default function RoomPage({ params }: { params: { code: string } }) {
     }
 
     // Reset room state
-    const wordCount = room.mode === 'time' ? 200 : Math.max(room.wordLimit, 100);
-    const newText = getRandomText(wordCount);
+    const wordCount = room.mode === 'time' ? 200 : 
+                     room.mode === 'sudden-death' ? 200 : 
+                     Math.max(room.wordLimit, 100);
+    const roomLanguage = room.language || 'en';
+    const newText = getRandomText(wordCount, roomLanguage);
     const resetPlayers: { [key: string]: any } = {};
     
     Object.values(room.players).forEach((player: any) => {
@@ -616,6 +630,82 @@ export default function RoomPage({ params }: { params: { code: string } }) {
                   : 'Menunggu host untuk memulai permainan...'}
               </p>
               
+              {/* Language Selector */}
+              {room.createdBy === user?.uid ? (
+                <div className="mb-6">
+                  <label className="block text-white font-semibold mb-2 text-center">
+                    Bahasa Kata (Text Language)
+                  </label>
+                  <div className="relative max-w-md mx-auto">
+                    <button
+                      type="button"
+                      onClick={() => setLanguageDropdownOpen(!languageDropdownOpen)}
+                      className="w-full bg-gradient-to-r from-yellow-600 to-orange-600 text-white border-2 border-yellow-500 rounded-lg px-4 py-3 pr-10 font-bold text-center focus:outline-none focus:ring-2 focus:ring-yellow-400/50 transition-all shadow-lg hover:shadow-xl hover:from-yellow-500 hover:to-orange-500 cursor-pointer"
+                    >
+                      {room.language === 'id' ? '🇮🇩 Bahasa Indonesia' : '🇬🇧 English'}
+                    </button>
+                    <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-white">
+                      <svg className={`w-5 h-5 transition-transform ${languageDropdownOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                      </svg>
+                    </div>
+                    {languageDropdownOpen && (
+                      <div className="absolute z-50 w-full mt-2 bg-gray-800 border-2 border-yellow-500/50 rounded-lg shadow-2xl overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            const newLanguage = 'id';
+                            const wordCount = room.mode === 'words' ? Math.max(room.wordLimit, 100) : 
+                                             room.mode === 'sudden-death' ? 100 : 200;
+                            await update(ref(database, `customRooms/${roomCode}`), { 
+                              language: newLanguage,
+                              text: getRandomText(wordCount, newLanguage)
+                            });
+                            setLanguageDropdownOpen(false);
+                          }}
+                          className={`w-full px-4 py-3 text-left font-bold transition-all flex items-center gap-2 ${
+                            room.language === 'id'
+                              ? 'bg-gradient-to-r from-yellow-600 to-orange-600 text-white'
+                              : 'text-gray-300 hover:bg-gray-700'
+                          }`}
+                        >
+                          🇮🇩 Bahasa Indonesia
+                        </button>
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            const newLanguage = 'en';
+                            const wordCount = room.mode === 'words' ? Math.max(room.wordLimit, 100) : 
+                                             room.mode === 'sudden-death' ? 100 : 200;
+                            await update(ref(database, `customRooms/${roomCode}`), { 
+                              language: newLanguage,
+                              text: getRandomText(wordCount, newLanguage)
+                            });
+                            setLanguageDropdownOpen(false);
+                          }}
+                          className={`w-full px-4 py-3 text-left font-bold transition-all flex items-center gap-2 ${
+                            room.language === 'en'
+                              ? 'bg-gradient-to-r from-yellow-600 to-orange-600 text-white'
+                              : 'text-gray-300 hover:bg-gray-700'
+                          }`}
+                        >
+                          🇬🇧 English
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-3 mb-6 max-w-md mx-auto">
+                  <div className="flex items-center justify-center gap-2">
+                    <FontAwesomeIcon icon={faGlobe} className="text-yellow-500" />
+                    <span className="text-gray-300 font-semibold">
+                      {room.language === 'id' ? '🇮🇩 Bahasa Indonesia' : '🇬🇧 English'}
+                    </span>
+                  </div>
+                </div>
+              )}
+              
               {/* Mode Settings - Only for host */}
               {room.createdBy === user?.uid && (
                 <div className="mb-6 space-y-4">
@@ -679,9 +769,10 @@ export default function RoomPage({ params }: { params: { code: string } }) {
                             key={time}
                             type="button"
                             onClick={async () => {
+                              const roomLanguage = room.language || 'en';
                               await update(ref(database, `customRooms/${roomCode}`), { 
                                 timeLimit: time,
-                                text: getRandomText(200) 
+                                text: getRandomText(200, roomLanguage) 
                               });
                             }}
                             className={`py-2 px-3 rounded-lg font-semibold transition-all ${
@@ -695,7 +786,7 @@ export default function RoomPage({ params }: { params: { code: string } }) {
                         ))}
                       </div>
                     </div>
-                  ) : (
+                  ) : room.mode === 'words' ? (
                     <div>
                       <label className="block text-white font-semibold mb-2">
                         Jumlah Kata: {room.wordLimit}
@@ -706,9 +797,10 @@ export default function RoomPage({ params }: { params: { code: string } }) {
                             key={words}
                             type="button"
                             onClick={async () => {
+                              const roomLanguage = room.language || 'en';
                               await update(ref(database, `customRooms/${roomCode}`), { 
                                 wordLimit: words,
-                                text: getRandomText(Math.max(words, 100)) 
+                                text: getRandomText(Math.max(words, 100), roomLanguage) 
                               });
                             }}
                             className={`py-2 px-3 rounded-lg font-semibold transition-all ${
@@ -722,6 +814,12 @@ export default function RoomPage({ params }: { params: { code: string } }) {
                         ))}
                       </div>
                     </div>
+                  ) : (
+                    <div className="bg-red-900/30 border border-red-700 rounded-lg p-4 max-w-md mx-auto">
+                      <p className="text-red-200 text-sm text-center">
+                        <span className="font-semibold">Sudden Death:</span> Ketik sebanyak mungkin kata tanpa kesalahan. Satu karakter salah = Game Over!
+                      </p>
+                    </div>
                   )}
                 </div>
               )}
@@ -733,7 +831,9 @@ export default function RoomPage({ params }: { params: { code: string } }) {
                   <div className="bg-gray-700/50 px-4 py-2 rounded-lg">
                     <span className="text-gray-400">Mode: </span>
                     <span className="text-yellow-400 font-semibold">
-                      {room.mode === 'time' ? `${room.timeLimit}s` : `${room.wordLimit} words`}
+                      {room.mode === 'time' ? `${room.timeLimit}s` : 
+                       room.mode === 'sudden-death' ? '♾️ Unlimited' : 
+                       `${room.wordLimit} words`}
                     </span>
                   </div>
                   <div className="bg-gray-700/50 px-4 py-2 rounded-lg">
@@ -841,6 +941,11 @@ export default function RoomPage({ params }: { params: { code: string } }) {
                   score: p.wpm * (p.accuracy / 100)
                 }))
                 .sort((a: any, b: any) => {
+                  // In sudden death mode, sort by completed words count
+                  if (room.mode === 'sudden-death') {
+                    return (b.completedWords || 0) - (a.completedWords || 0);
+                  }
+                  // Normal modes: sort by completion and score
                   if (a.isFinished && b.isFinished) return b.score - a.score;
                   if (a.isFinished) return -1;
                   if (b.isFinished) return 1;
@@ -889,7 +994,11 @@ export default function RoomPage({ params }: { params: { code: string } }) {
                   
                   <div className="flex justify-between text-xs text-gray-500 mb-2">
                     <span>{player.wpm} wpm</span>
-                    <span>{Math.floor(player.progress)}%</span>
+                    {room.mode === 'sudden-death' ? (
+                      <span className="text-green-400">{player.completedWords || 0} words</span>
+                    ) : (
+                      <span>{Math.floor(player.progress)}%</span>
+                    )}
                   </div>
                   
                   <div className="w-full bg-gray-600 rounded-full h-1.5">

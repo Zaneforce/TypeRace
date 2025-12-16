@@ -187,7 +187,7 @@ export default function LeaderboardPage() {
                         {entry.wpm} <span className="text-sm text-gray-400">WPM</span>
                       </div>
                       <div className="text-gray-400 text-sm">
-                        {entry.accuracy}% accuracy
+                        {entry.accuracy}% accuracy · {entry.wordCount || 0} words
                       </div>
                     </div>
                   </div>

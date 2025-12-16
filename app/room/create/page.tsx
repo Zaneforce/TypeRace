@@ -3,15 +3,17 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
+import { useLanguage } from '@/contexts/LanguageContext';
 import { database } from '@/lib/firebase';
 import { ref, set } from 'firebase/database';
 import { getRandomText } from '@/utils/textUtils';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faHome, faUsers, faRocket, faLink, faBolt, faLightbulb, faSkull } from '@fortawesome/free-solid-svg-icons';
+import { faHome, faUsers, faRocket, faLink, faBolt, faLightbulb, faSkull, faGlobe } from '@fortawesome/free-solid-svg-icons';
 
 export default function CreateRoomPage() {
   const router = useRouter();
   const { user } = useAuth();
+  const { language, setLanguage } = useLanguage();
   const [roomName, setRoomName] = useState('');
   const [maxPlayers, setMaxPlayers] = useState(4);
   const [mode, setMode] = useState<'time' | 'words' | 'sudden-death'>('time');
@@ -19,6 +21,7 @@ export default function CreateRoomPage() {
   const [wordLimit, setWordLimit] = useState(50);
   const [suddenDeathWordCount, setSuddenDeathWordCount] = useState(50);
   const [isCreating, setIsCreating] = useState(false);
+  const [languageDropdownOpen, setLanguageDropdownOpen] = useState(false);
 
   useEffect(() => {
     if (!user) {
@@ -47,7 +50,7 @@ export default function CreateRoomPage() {
       // Generate appropriate amount of text based on mode
       let wordCount = 200;
       if (mode === 'words') wordCount = Math.max(wordLimit, 100);
-      else if (mode === 'sudden-death') wordCount = suddenDeathWordCount;
+      else if (mode === 'sudden-death') wordCount = 100; // Start with 100 words, will auto-generate more
       
       // Create room data in Firebase
       const roomData = {
@@ -57,7 +60,8 @@ export default function CreateRoomPage() {
         mode,
         timeLimit,
         wordLimit,
-        text: getRandomText(wordCount),
+        text: getRandomText(wordCount, language),
+        language: language,
         status: 'waiting',
         players: {},
         createdAt: Date.now(),
@@ -136,6 +140,59 @@ export default function CreateRoomPage() {
               <span>4</span>
               <span>6</span>
               <span>8</span>
+            </div>
+          </div>
+
+          {/* Language Selection */}
+          <div>
+            <label className="block text-white font-semibold mb-2">
+              Bahasa Kata (Text Language)
+            </label>
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setLanguageDropdownOpen(!languageDropdownOpen)}
+                className="w-full bg-gradient-to-r from-gray-700 to-gray-800 text-white border-2 border-gray-600 rounded-lg px-4 py-3 pr-10 font-semibold focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 transition-all shadow-lg hover:shadow-xl hover:border-gray-500 cursor-pointer text-left"
+              >
+                {language === 'id' ? '🇮🇩 Bahasa Indonesia' : '🇬🇧 English'}
+              </button>
+              <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-gray-400">
+                <svg className={`w-5 h-5 transition-transform ${languageDropdownOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </div>
+              {languageDropdownOpen && (
+                <div className="absolute z-50 w-full mt-2 bg-gray-800 border-2 border-gray-600 rounded-lg shadow-2xl overflow-hidden">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setLanguage('id');
+                      setLanguageDropdownOpen(false);
+                    }}
+                    className={`w-full px-4 py-3 text-left font-semibold transition-all flex items-center gap-2 ${
+                      language === 'id'
+                        ? 'bg-orange-600 text-white'
+                        : 'text-gray-300 hover:bg-gray-700'
+                    }`}
+                  >
+                    🇮🇩 Bahasa Indonesia
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setLanguage('en');
+                      setLanguageDropdownOpen(false);
+                    }}
+                    className={`w-full px-4 py-3 text-left font-semibold transition-all flex items-center gap-2 ${
+                      language === 'en'
+                        ? 'bg-orange-600 text-white'
+                        : 'text-gray-300 hover:bg-gray-700'
+                    }`}
+                  >
+                    🇬🇧 English
+                  </button>
+                </div>
+              )}
             </div>
           </div>
 
@@ -228,26 +285,10 @@ export default function CreateRoomPage() {
               </div>
             </div>
           ) : (
-            <div>
-              <label className="block text-white font-semibold mb-2">
-                Jumlah Kata: {suddenDeathWordCount}
-              </label>
-              <div className="grid grid-cols-4 gap-2">
-                {[25, 50, 75, 100].map((words) => (
-                  <button
-                    key={words}
-                    type="button"
-                    onClick={() => setSuddenDeathWordCount(words)}
-                    className={`py-2 px-3 rounded-lg font-semibold transition-all ${
-                      suddenDeathWordCount === words
-                        ? 'bg-red-600 text-white'
-                        : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-                    }`}
-                  >
-                    {words}
-                  </button>
-                ))}
-              </div>
+            <div className="bg-red-900/30 border border-red-700 rounded-lg p-4">
+              <p className="text-red-200 text-sm">
+                <span className="font-semibold">Sudden Death:</span> Type as many words as you can without making a single mistake. One wrong character = Game Over!
+              </p>
             </div>
           )}
 

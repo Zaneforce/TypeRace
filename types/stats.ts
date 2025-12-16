@@ -27,5 +27,6 @@ export interface LeaderboardEntry {
   username: string;
   wpm: number;
   accuracy: number;
+  wordCount: number;
   timestamp: number;
 }

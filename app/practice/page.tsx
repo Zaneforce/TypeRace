@@ -7,8 +7,9 @@ import { useKeyboardSound } from '@/hooks/useKeyboardSound';
 import { useTypingStore } from '@/store/typingStore';
 import { getRandomText } from '@/utils/textUtils';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faHome, faRotateRight, faVolumeHigh, faVolumeXmark, faSkull } from '@fortawesome/free-solid-svg-icons';
+import { faHome, faRotateRight, faVolumeHigh, faVolumeXmark, faSkull, faGlobe } from '@fortawesome/free-solid-svg-icons';
 import { useAuth } from '@/contexts/AuthContext';
+import { useLanguage } from '@/contexts/LanguageContext';
 import { database } from '@/lib/firebase';
 import { ref, push, set, get, update } from 'firebase/database';
 import { TypingSession, UserStats } from '@/types/stats';
@@ -20,6 +21,7 @@ type WordsOption = 10 | 25 | 50 | 100;
 export default function PracticePage() {
   const router = useRouter();
   const { user } = useAuth();
+  const { language, setLanguage } = useLanguage();
   const { playKeySound, soundEnabled, toggleSound } = useKeyboardSound();
   const [pressedKey, setPressedKey] = useState('');
   const [nextKey, setNextKey] = useState('');
@@ -29,6 +31,7 @@ export default function PracticePage() {
   const [timeLeft, setTimeLeft] = useState<number>(30);
   const [startTime, setStartTime] = useState<number>(0);
   const [suddenDeathWordCount, setSuddenDeathWordCount] = useState<number>(50);
+  const [completedWords, setCompletedWords] = useState<number>(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   
@@ -47,9 +50,9 @@ export default function PracticePage() {
 
   useEffect(() => {
     const wordCount = mode === 'words' ? Math.max(wordLimit, 50) : 100;
-    setCurrentText(getRandomText(wordCount));
+    setCurrentText(getRandomText(wordCount, language));
     inputRef.current?.focus();
-  }, [setCurrentText, mode, wordLimit]);
+  }, [setCurrentText, mode, wordLimit, language]);
 
   // Save session to Firebase
   const saveSession = async () => {
@@ -122,6 +125,7 @@ export default function PracticePage() {
         username: user.displayName || user.email || 'Anonymous',
         wpm: Math.round(stats.wpm),
         accuracy: Math.round(stats.accuracy),
+        wordCount: wordCount,
         timestamp: Date.now()
       };
 
@@ -184,15 +188,15 @@ export default function PracticePage() {
       setNextKey('');
     }
     
-    // Auto-generate more text in time mode when user is close to finishing
-    if (mode === 'time' && isStarted && !isFinished) {
+    // Auto-generate more text in time mode and sudden death mode when user is close to finishing
+    if ((mode === 'time' || mode === 'sudden-death') && isStarted && !isFinished) {
       const progress = userInput.length / currentText.length;
       // When user has typed 80% of the text, add more text
       if (progress > 0.8) {
-        setCurrentText(currentText + ' ' + getRandomText(50));
+        setCurrentText(currentText + ' ' + getRandomText(50, language));
       }
     }
-  }, [userInput, currentText, mode, isStarted, isFinished, setCurrentText]);
+  }, [userInput, currentText, mode, isStarted, isFinished, setCurrentText, language]);
 
   const handlePaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
     e.preventDefault();
@@ -228,6 +232,11 @@ export default function PracticePage() {
         saveSession();
         return;
       }
+      
+      // Update completed words count (count spaces as word completion)
+      if (typedChar === ' ') {
+        setCompletedWords(prev => prev + 1);
+      }
     }
     
     // Only allow typing the next character correctly (like Monkeytype)
@@ -246,11 +255,12 @@ export default function PracticePage() {
 
   const handleRestart = () => {
     resetTyping();
+    setCompletedWords(0);
     let wordCount = 50;
     if (mode === 'words') wordCount = wordLimit;
-    else if (mode === 'sudden-death') wordCount = suddenDeathWordCount;
+    else if (mode === 'sudden-death') wordCount = 100; // Start with 100 words, will auto-generate more
     
-    setCurrentText(getRandomText(wordCount));
+    setCurrentText(getRandomText(wordCount, language));
     setTimeLeft(mode === 'time' ? timeLimit : 0);
     setStartTime(0);
     if (timerRef.current) {
@@ -262,11 +272,12 @@ export default function PracticePage() {
   const handleModeChange = (newMode: Mode) => {
     setMode(newMode);
     resetTyping();
+    setCompletedWords(0);
     let wordCount = 50;
     if (newMode === 'words') wordCount = wordLimit;
-    else if (newMode === 'sudden-death') wordCount = suddenDeathWordCount;
+    else if (newMode === 'sudden-death') wordCount = 100; // Start with 100 words, will auto-generate more
     
-    setCurrentText(getRandomText(wordCount));
+    setCurrentText(getRandomText(wordCount, language));
     setTimeLeft(newMode === 'time' ? timeLimit : 0);
   };
 
@@ -274,13 +285,13 @@ export default function PracticePage() {
     setTimeLimit(time);
     setTimeLeft(time);
     resetTyping();
-    setCurrentText(getRandomText(50));
+    setCurrentText(getRandomText(50, language));
   };
 
   const handleWordLimitChange = (words: WordsOption) => {
     setWordLimit(words);
     resetTyping();
-    setCurrentText(getRandomText(words));
+    setCurrentText(getRandomText(words, language));
   };
 
   const renderText = () => {
@@ -384,6 +395,14 @@ export default function PracticePage() {
           </h1>
           <div className="flex items-center gap-4">
             <button
+              onClick={() => setLanguage(language === 'en' ? 'id' : 'en')}
+              className="text-gray-500 hover:text-yellow-500 transition-colors flex items-center gap-2 text-sm font-medium"
+              title={language === 'en' ? 'Switch to Indonesian' : 'Switch to English'}
+            >
+              <FontAwesomeIcon icon={faGlobe} />
+              <span className="uppercase">{language}</span>
+            </button>
+            <button
               onClick={toggleSound}
               className={`text-sm font-medium transition-colors flex items-center gap-2 ${
                 soundEnabled ? 'text-yellow-500 hover:text-yellow-400' : 'text-gray-500 hover:text-gray-400'
@@ -418,15 +437,15 @@ export default function PracticePage() {
             </div>
             <div className="bg-gray-800/50 p-4 rounded-lg border border-gray-700/50">
               <div className="text-gray-500 text-xs mb-1">
-                {mode === 'time' ? 'time left' : mode === 'sudden-death' ? 'mistakes' : 'progress'}
+                {mode === 'time' ? 'time left' : mode === 'sudden-death' ? 'words completed' : 'progress'}
               </div>
-              <div className={`text-3xl font-bold ${mode === 'sudden-death' ? 'text-red-500' : 'text-yellow-500'}`}>
+              <div className={`text-3xl font-bold ${mode === 'sudden-death' ? 'text-green-500' : 'text-yellow-500'}`}>
                 {mode === 'time' 
                   ? `${timeLeft}s` 
                   : mode === 'sudden-death'
                   ? (
                     <span className="flex items-center justify-center gap-2">
-                      <FontAwesomeIcon icon={faSkull} /> 0
+                      {completedWords}
                     </span>
                   )
                   : `${userInput.length}/${currentText.length}`}
@@ -510,27 +529,9 @@ export default function PracticePage() {
                   ))}
                 </>
               ) : (
-                <>
-                  {[25, 50, 75, 100].map((words) => (
-                    <button
-                      key={words}
-                      onClick={() => {
-                        setSuddenDeathWordCount(words);
-                        if (!isStarted) {
-                          setCurrentText(getRandomText(words));
-                        }
-                      }}
-                      disabled={isStarted}
-                      className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-                        suddenDeathWordCount === words
-                          ? 'bg-red-500/20 text-red-500 border border-red-500/50'
-                          : 'text-gray-500 hover:text-gray-300'
-                      } ${isStarted ? 'opacity-50 cursor-not-allowed' : ''}`}
-                    >
-                      {words}
-                    </button>
-                  ))}
-                </>
+                <div className="text-sm text-gray-500 italic">
+                  Type as many words as you can without mistakes!
+                </div>
               )}
             </div>
           </div>
