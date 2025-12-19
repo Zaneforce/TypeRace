@@ -301,7 +301,7 @@ export default function PracticePage() {
     }
 
     // Play sound
-    playKeySound();
+    playKeySound(e.key);
     
     // Update visual keyboard
     setPressedKey(e.key);

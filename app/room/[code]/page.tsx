@@ -501,7 +501,7 @@ export default function RoomPage({ params }: { params: { code: string } }) {
       });
     }
 
-    playKeySound();
+    playKeySound(e.key);
     
     setPressedKey(e.key);
     setTimeout(() => setPressedKey(''), 100);

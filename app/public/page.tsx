@@ -157,7 +157,7 @@ export default function PublicRoomPage() {
       }
     }
 
-    playKeySound();
+    playKeySound(e.key);
     
     setPressedKey(e.key);
     setTimeout(() => setPressedKey(''), 100);
