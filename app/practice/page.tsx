@@ -295,6 +295,20 @@ export default function PracticePage() {
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    // Shortcut: Tab + Enter untuk restart
+    if (e.key === 'Tab' && e.repeat === false) {
+      e.preventDefault();
+      handleRestart();
+      return;
+    }
+
+    // Shortcut: Enter untuk next test (jika sudah selesai)
+    if (e.key === 'Enter' && isFinished) {
+      e.preventDefault();
+      handleRestart();
+      return;
+    }
+
     if (!isStarted && e.key !== 'Tab') {
       startTyping();
       setStartTime(Date.now());
@@ -642,8 +656,13 @@ export default function PracticePage() {
         {/* Text Display */}
         <div className="mb-8 mt-16">
           {!isStarted && (
-            <div className="text-center mb-6 text-gray-600 text-sm animate-pulse">
-              Start typing to begin...
+            <div className="text-center mb-6 space-y-2">
+              <div className="text-gray-600 text-sm animate-pulse">
+                Start typing to begin...
+              </div>
+              <div className="text-xs text-gray-500">
+                <kbd className="px-2 py-1 bg-gray-800 rounded border border-gray-700">Tab + Enter</kbd> to restart
+              </div>
             </div>
           )}
           
@@ -696,12 +715,17 @@ export default function PracticePage() {
               <div className="text-gray-400">
                 Akurasi: <span className="text-yellow-500 font-semibold">{stats.accuracy}%</span>
               </div>
-              <button
-                onClick={handleRestart}
-                className="mt-4 px-6 py-2 bg-yellow-500/10 hover:bg-yellow-500/20 text-yellow-500 rounded-lg transition-colors"
-              >
-                Next Test
-              </button>
+              <div className="mt-4 space-y-2">
+                <button
+                  onClick={handleRestart}
+                  className="w-full px-6 py-2 bg-yellow-500/10 hover:bg-yellow-500/20 text-yellow-500 rounded-lg transition-colors"
+                >
+                  Next Test
+                </button>
+                <div className="text-xs text-gray-500">
+                  Press <kbd className="px-2 py-1 bg-gray-700 rounded">Tab + Enter</kbd> or <kbd className="px-2 py-1 bg-gray-700 rounded">Enter</kbd> to restart
+                </div>
+              </div>
             </div>
           </div>
         )}
