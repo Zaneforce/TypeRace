@@ -54,9 +54,19 @@ export default function RoomPage({ params }: { params: { code: string } }) {
   const [copied, setCopied] = useState(false);
   const [showWinner, setShowWinner] = useState(false);
   const [languageDropdownOpen, setLanguageDropdownOpen] = useState(false);
+  const [modalConfig, setModalConfig] = useState<{
+    show: boolean;
+    title: string;
+    message: string;
+    type: 'info' | 'error' | 'confirm' | 'success';
+    onConfirm?: () => void;
+    onCancel?: () => void;
+  }>({ show: false, title: '', message: '', type: 'info' });
+  const [ownershipNotification, setOwnershipNotification] = useState<string>('');
   const inputRef = useRef<HTMLInputElement>(null);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const hasJoinedRef = useRef(false);
+  const previousOwnerRef = useRef<string>('');
   
   // Refs to store latest values for saveSession
   const userInputRef = useRef<string>('');
@@ -94,8 +104,16 @@ export default function RoomPage({ params }: { params: { code: string } }) {
       const snapshot = await get(roomRef);
       
       if (!snapshot.exists()) {
-        alert('Room tidak ditemukan!');
-        router.push('/');
+        setModalConfig({
+          show: true,
+          title: 'Room Tidak Ditemukan',
+          message: 'Room yang Anda cari tidak ditemukan atau sudah dihapus.',
+          type: 'error',
+          onConfirm: () => {
+            setModalConfig({ ...modalConfig, show: false });
+            router.push('/');
+          }
+        });
         return;
       }
 
@@ -116,6 +134,41 @@ export default function RoomPage({ params }: { params: { code: string } }) {
 
     joinRoom();
 
+    // Handle player leaving (cleanup)
+    const handlePlayerLeave = async () => {
+      if (!hasJoinedRef.current) return;
+      
+      try {
+        const snapshot = await get(roomRef);
+        if (!snapshot.exists()) return;
+
+        const roomData = snapshot.val();
+        const players = roomData.players || {};
+        const isOwner = roomData.createdBy === user.uid;
+        
+        // Remove current player
+        await remove(ref(database, `customRooms/${roomCode}/players/${user.uid}`));
+        
+        // Check if there are any remaining players
+        const remainingPlayers = Object.keys(players).filter(id => id !== user.uid);
+        
+        if (remainingPlayers.length === 0) {
+          // If no players left, delete the entire room
+          await remove(ref(database, `customRooms/${roomCode}`));
+          console.log('Room deleted - no players remaining');
+        } else if (isOwner) {
+          // If owner is leaving and there are other players, transfer ownership
+          const newOwnerId = remainingPlayers[0];
+          await update(ref(database, `customRooms/${roomCode}`), {
+            createdBy: newOwnerId
+          });
+          console.log(`Ownership transferred to ${players[newOwnerId]?.name}`);
+        }
+      } catch (error) {
+        console.error('Error during cleanup:', error);
+      }
+    };
+
     // Listen to room changes
     const unsubscribe = onValue(roomRef, async (snapshot) => {
       const data = snapshot.val();
@@ -123,8 +176,16 @@ export default function RoomPage({ params }: { params: { code: string } }) {
         // Check if current user has been kicked (not in players list)
         // Only check after user has successfully joined
         if (hasJoinedRef.current && (!data.players || !data.players[user.uid])) {
-          alert('Anda telah di-kick dari room!');
-          router.push('/');
+          setModalConfig({
+            show: true,
+            title: 'Kicked dari Room',
+            message: 'Anda telah di-kick dari room oleh host.',
+            type: 'error',
+            onConfirm: () => {
+              setModalConfig({ ...modalConfig, show: false });
+              router.push('/');
+            }
+          });
           return;
         }
         
@@ -155,14 +216,33 @@ export default function RoomPage({ params }: { params: { code: string } }) {
           setShowWinner(true);
         }
       } else {
-        alert('Room tidak ditemukan!');
-        router.push('/');
+        setModalConfig({
+          show: true,
+          title: 'Room Tidak Ditemukan',
+          message: 'Room yang Anda cari tidak ditemukan atau sudah dihapus.',
+          type: 'error',
+          onConfirm: () => {
+            setModalConfig({ ...modalConfig, show: false });
+            router.push('/');
+          }
+        });
       }
     });
 
+    // Cleanup when component unmounts or user navigates away
+    const beforeUnloadHandler = () => {
+      handlePlayerLeave();
+    };
+
+    window.addEventListener('beforeunload', beforeUnloadHandler);
+
     inputRef.current?.focus();
 
-    return () => unsubscribe();
+    return () => {
+      unsubscribe();
+      window.removeEventListener('beforeunload', beforeUnloadHandler);
+      handlePlayerLeave();
+    };
   }, [roomCode, user, router]);
 
   // Reset local state when room status changes to 'waiting' (play again)
@@ -176,6 +256,24 @@ export default function RoomPage({ params }: { params: { code: string } }) {
       inputRef.current?.focus();
     }
   }, [room?.status, room?.timeLimit]);
+
+  // Detect ownership transfer and show notification
+  useEffect(() => {
+    if (!room || !user) return;
+    
+    // Check if ownership changed
+    if (previousOwnerRef.current && previousOwnerRef.current !== room.createdBy) {
+      // Ownership has been transferred
+      if (room.createdBy === user.uid) {
+        // Current user is now the owner
+        setOwnershipNotification('Anda sekarang menjadi Room Owner!');
+        setTimeout(() => setOwnershipNotification(''), 5000);
+      }
+    }
+    
+    // Update previous owner reference
+    previousOwnerRef.current = room.createdBy;
+  }, [room?.createdBy, user]);
 
   // Timer for time mode
   useEffect(() => {
@@ -506,24 +604,83 @@ export default function RoomPage({ params }: { params: { code: string } }) {
     
     // Only room creator can kick players
     if (room.createdBy !== user.uid) {
-      alert('Hanya room owner yang bisa kick player!');
+      setModalConfig({
+        show: true,
+        title: 'Akses Ditolak',
+        message: 'Hanya room owner yang bisa kick player!',
+        type: 'error',
+        onConfirm: () => setModalConfig({ ...modalConfig, show: false })
+      });
       return;
     }
 
     // Cannot kick yourself
     if (playerId === user.uid) {
-      alert('Anda tidak bisa kick diri sendiri!');
+      setModalConfig({
+        show: true,
+        title: 'Tidak Diizinkan',
+        message: 'Anda tidak bisa kick diri sendiri!',
+        type: 'error',
+        onConfirm: () => setModalConfig({ ...modalConfig, show: false })
+      });
       return;
     }
 
-    if (confirm(`Kick player ${room.players[playerId]?.name}?`)) {
-      try {
-        await remove(ref(database, `customRooms/${roomCode}/players/${playerId}`));
-      } catch (error) {
-        console.error('Error kicking player:', error);
-        alert('Gagal kick player!');
-      }
-    }
+    setModalConfig({
+      show: true,
+      title: 'Konfirmasi Kick Player',
+      message: `Apakah Anda yakin ingin kick ${room.players[playerId]?.name}?`,
+      type: 'confirm',
+      onConfirm: async () => {
+        setModalConfig({ ...modalConfig, show: false });
+        try {
+          await remove(ref(database, `customRooms/${roomCode}/players/${playerId}`));
+          
+          // Check if there are any remaining players after kick
+          const roomRef = ref(database, `customRooms/${roomCode}`);
+          const snapshot = await get(roomRef);
+          
+          if (snapshot.exists()) {
+            const roomData = snapshot.val();
+            const players = roomData.players || {};
+            
+            // If no players left, delete the entire room
+            if (Object.keys(players).length === 0) {
+              await remove(ref(database, `customRooms/${roomCode}`));
+              console.log('Room deleted - no players remaining after kick');
+              setModalConfig({
+                show: true,
+                title: 'Room Dihapus',
+                message: 'Semua player sudah keluar. Room telah dihapus.',
+                type: 'info',
+                onConfirm: () => {
+                  setModalConfig({ ...modalConfig, show: false });
+                  router.push('/');
+                }
+              });
+            } else {
+              setModalConfig({
+                show: true,
+                title: 'Berhasil',
+                message: 'Player berhasil di-kick dari room.',
+                type: 'success',
+                onConfirm: () => setModalConfig({ ...modalConfig, show: false })
+              });
+            }
+          }
+        } catch (error) {
+          console.error('Error kicking player:', error);
+          setModalConfig({
+            show: true,
+            title: 'Error',
+            message: 'Gagal kick player. Silakan coba lagi.',
+            type: 'error',
+            onConfirm: () => setModalConfig({ ...modalConfig, show: false })
+          });
+        }
+      },
+      onCancel: () => setModalConfig({ ...modalConfig, show: false })
+    });
   };
 
   const handlePlayAgain = async () => {
@@ -531,7 +688,13 @@ export default function RoomPage({ params }: { params: { code: string } }) {
     
     // Only room owner can restart
     if (room.createdBy !== user.uid) {
-      alert('Hanya room owner yang bisa restart!');
+      setModalConfig({
+        show: true,
+        title: 'Akses Ditolak',
+        message: 'Hanya room owner yang bisa restart game!',
+        type: 'error',
+        onConfirm: () => setModalConfig({ ...modalConfig, show: false })
+      });
       return;
     }
 
@@ -568,6 +731,75 @@ export default function RoomPage({ params }: { params: { code: string } }) {
     setTimeLeft(room.timeLimit);
     setShowWinner(false);
     inputRef.current?.focus();
+  };
+
+  const handleLeaveRoom = async () => {
+    if (!user) return;
+
+    setModalConfig({
+      show: true,
+      title: 'Konfirmasi Keluar',
+      message: 'Apakah Anda yakin ingin keluar dari room?',
+      type: 'confirm',
+      onConfirm: async () => {
+        setModalConfig({ ...modalConfig, show: false });
+        try {
+          const roomRef = ref(database, `customRooms/${roomCode}`);
+          const snapshot = await get(roomRef);
+          
+          if (snapshot.exists()) {
+            const roomData = snapshot.val();
+            const players = roomData.players || {};
+            const isOwner = roomData.createdBy === user.uid;
+            
+            // Remove current player
+            await remove(ref(database, `customRooms/${roomCode}/players/${user.uid}`));
+            
+            // Check if there are any remaining players
+            const remainingPlayers = Object.keys(players).filter(id => id !== user.uid);
+            
+            if (remainingPlayers.length === 0) {
+              // If no players left, delete the entire room
+              await remove(ref(database, `customRooms/${roomCode}`));
+              console.log('Room deleted - no players remaining');
+            } else if (isOwner) {
+              // If owner is leaving and there are other players, transfer ownership
+              const newOwnerId = remainingPlayers[0];
+              const newOwnerName = players[newOwnerId]?.name || 'Player';
+              await update(ref(database, `customRooms/${roomCode}`), {
+                createdBy: newOwnerId
+              });
+              console.log(`Ownership transferred to ${newOwnerName}`);
+              
+              // Show notification to user
+              setModalConfig({
+                show: true,
+                title: 'Ownership Dipindahkan',
+                message: `Ownership room telah dipindahkan ke ${newOwnerName}.`,
+                type: 'info',
+                onConfirm: () => {
+                  setModalConfig({ ...modalConfig, show: false });
+                  router.push('/');
+                }
+              });
+              return; // Don't navigate yet, wait for modal confirmation
+            }
+          }
+          
+          router.push('/');
+        } catch (error) {
+          console.error('Error leaving room:', error);
+          setModalConfig({
+            show: true,
+            title: 'Error',
+            message: 'Gagal keluar dari room. Silakan coba lagi.',
+            type: 'error',
+            onConfirm: () => setModalConfig({ ...modalConfig, show: false })
+          });
+        }
+      },
+      onCancel: () => setModalConfig({ ...modalConfig, show: false })
+    });
   };
 
   const renderText = () => {
@@ -659,6 +891,16 @@ export default function RoomPage({ params }: { params: { code: string } }) {
 
   return (
     <main className="min-h-screen bg-[#1a1a1a] text-gray-300">
+      {/* Ownership Transfer Notification Toast */}
+      {ownershipNotification && (
+        <div className="fixed top-24 left-1/2 transform -translate-x-1/2 z-50 animate-in slide-in-from-top duration-300">
+          <div className="bg-gradient-to-r from-yellow-600 to-orange-600 text-white px-8 py-4 rounded-xl shadow-2xl border-2 border-yellow-400 flex items-center gap-3">
+            <FontAwesomeIcon icon={faCrown} className="text-2xl animate-pulse" />
+            <span className="font-bold text-lg">{ownershipNotification}</span>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div className="border-b border-gray-800 sticky top-0 bg-[#1a1a1a] z-10">
         <div className="max-w-7xl mx-auto px-8 py-6 flex justify-between items-center">
@@ -730,7 +972,15 @@ export default function RoomPage({ params }: { params: { code: string } }) {
                       onClick={() => setLanguageDropdownOpen(!languageDropdownOpen)}
                       className="w-full bg-gradient-to-r from-yellow-600 to-orange-600 text-white border-2 border-yellow-500 rounded-lg px-4 py-3 pr-10 font-bold text-center focus:outline-none focus:ring-2 focus:ring-yellow-400/50 transition-all shadow-lg hover:shadow-xl hover:from-yellow-500 hover:to-orange-500 cursor-pointer"
                     >
-                      {room.language === 'id' ? '🇮🇩 Bahasa Indonesia' : '🇬🇧 English'}
+                      {room.language === 'id' ? (
+                        <span className="flex items-center justify-center gap-2">
+                          <FontAwesomeIcon icon={faGlobe} /> Bahasa Indonesia
+                        </span>
+                      ) : (
+                        <span className="flex items-center justify-center gap-2">
+                          <FontAwesomeIcon icon={faGlobe} /> English
+                        </span>
+                      )}
                     </button>
                     <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-white">
                       <svg className={`w-5 h-5 transition-transform ${languageDropdownOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -757,7 +1007,7 @@ export default function RoomPage({ params }: { params: { code: string } }) {
                               : 'text-gray-300 hover:bg-gray-700'
                           }`}
                         >
-                          🇮🇩 Bahasa Indonesia
+                          <FontAwesomeIcon icon={faGlobe} /> Bahasa Indonesia
                         </button>
                         <button
                           type="button"
@@ -777,7 +1027,7 @@ export default function RoomPage({ params }: { params: { code: string } }) {
                               : 'text-gray-300 hover:bg-gray-700'
                           }`}
                         >
-                          🇬🇧 English
+                          <FontAwesomeIcon icon={faGlobe} /> English
                         </button>
                       </div>
                     )}
@@ -788,7 +1038,7 @@ export default function RoomPage({ params }: { params: { code: string } }) {
                   <div className="flex items-center justify-center gap-2">
                     <FontAwesomeIcon icon={faGlobe} className="text-yellow-500" />
                     <span className="text-gray-300 font-semibold">
-                      {room.language === 'id' ? '🇮🇩 Bahasa Indonesia' : '🇬🇧 English'}
+                      {room.language === 'id' ? 'Bahasa Indonesia' : 'English'}
                     </span>
                   </div>
                 </div>
@@ -920,7 +1170,11 @@ export default function RoomPage({ params }: { params: { code: string } }) {
                     <span className="text-gray-400">Mode: </span>
                     <span className="text-yellow-400 font-semibold">
                       {room.mode === 'time' ? `${room.timeLimit}s` : 
-                       room.mode === 'sudden-death' ? '♾️ Unlimited' : 
+                       room.mode === 'sudden-death' ? (
+                        <span className="flex items-center gap-1">
+                          <FontAwesomeIcon icon={faSkull} /> Unlimited
+                        </span>
+                       ) : 
                        `${room.wordLimit} words`}
                     </span>
                   </div>
@@ -937,11 +1191,19 @@ export default function RoomPage({ params }: { params: { code: string } }) {
                 <button
                   onClick={handleStartGame}
                   disabled={Object.keys(room.players || {}).length < 1}
-                  className="bg-gradient-to-r from-yellow-600 to-orange-600 hover:from-yellow-500 hover:to-orange-500 disabled:from-gray-600 disabled:to-gray-700 text-white font-bold py-4 px-8 rounded-xl transition-all transform hover:scale-105 disabled:scale-100 disabled:cursor-not-allowed text-lg flex items-center gap-2 mx-auto"
+                  className="bg-gradient-to-r from-yellow-600 to-orange-600 hover:from-yellow-500 hover:to-orange-500 disabled:from-gray-600 disabled:to-gray-700 text-white font-bold py-4 px-8 rounded-xl transition-all transform hover:scale-105 disabled:scale-100 disabled:cursor-not-allowed text-lg flex items-center gap-2 mx-auto mb-4"
                 >
                   <FontAwesomeIcon icon={faRocket} /> Start Game
                 </button>
               )}
+
+              {/* Leave Room Button */}
+              <button
+                onClick={handleLeaveRoom}
+                className="bg-red-600 hover:bg-red-700 text-white font-semibold py-3 px-6 rounded-lg transition-colors flex items-center gap-2 mx-auto"
+              >
+                Keluar dari Room
+              </button>
             </div>
           )}
 
@@ -1149,7 +1411,9 @@ export default function RoomPage({ params }: { params: { code: string } }) {
                       {/* 1st Place */}
                       {topThree[0] && (
                         <div className="flex flex-col items-center -mt-8">
-                          <div className="text-5xl mb-3">🏆</div>
+                          <div className="text-5xl mb-3 text-yellow-500">
+                            <FontAwesomeIcon icon={faTrophy} />
+                          </div>
                           <div className="bg-gradient-to-b from-yellow-500 to-yellow-600 rounded-t-lg p-6 w-36 text-center border-2 border-yellow-400">
                             <div className="text-gray-900 font-bold mb-2">{topThree[0].name}</div>
                             <div className="text-gray-800 text-sm mb-1">{topThree[0].wpm} WPM</div>
@@ -1164,7 +1428,9 @@ export default function RoomPage({ params }: { params: { code: string } }) {
                       {/* 3rd Place */}
                       {topThree[2] && (
                         <div className="flex flex-col items-center">
-                          <div className="text-4xl mb-3">🥉</div>
+                          <div className="text-4xl mb-3 text-orange-600">
+                            <FontAwesomeIcon icon={faTrophy} />
+                          </div>
                           <div className="bg-gradient-to-b from-orange-700 to-orange-800 rounded-t-lg p-5 w-32 text-center border-2 border-orange-600">
                             <div className="text-white font-bold text-sm mb-2">{topThree[2].name}</div>
                             <div className="text-orange-200 text-xs mb-1">{topThree[2].wpm} WPM</div>
@@ -1214,6 +1480,93 @@ export default function RoomPage({ params }: { params: { code: string } }) {
                 >
                   Kembali ke Home
                 </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Custom Modal */}
+      {modalConfig.show && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
+          <div className="bg-gray-800 rounded-2xl p-8 max-w-md w-full mx-4 border-2 border-gray-700/50 shadow-2xl transform animate-in zoom-in-95 duration-200">
+            <div className="text-center">
+              {/* Icon based on type */}
+              <div className="mb-6">
+                {modalConfig.type === 'error' && (
+                  <div className="w-16 h-16 bg-red-500/20 rounded-full flex items-center justify-center mx-auto">
+                    <svg className="w-8 h-8 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </div>
+                )}
+                {modalConfig.type === 'success' && (
+                  <div className="w-16 h-16 bg-green-500/20 rounded-full flex items-center justify-center mx-auto">
+                    <svg className="w-8 h-8 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                  </div>
+                )}
+                {modalConfig.type === 'confirm' && (
+                  <div className="w-16 h-16 bg-yellow-500/20 rounded-full flex items-center justify-center mx-auto">
+                    <svg className="w-8 h-8 text-yellow-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                    </svg>
+                  </div>
+                )}
+                {modalConfig.type === 'info' && (
+                  <div className="w-16 h-16 bg-blue-500/20 rounded-full flex items-center justify-center mx-auto">
+                    <svg className="w-8 h-8 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                  </div>
+                )}
+              </div>
+
+              {/* Title */}
+              <h3 className={`text-2xl font-bold mb-4 ${
+                modalConfig.type === 'error' ? 'text-red-400' :
+                modalConfig.type === 'success' ? 'text-green-400' :
+                modalConfig.type === 'confirm' ? 'text-yellow-400' :
+                'text-blue-400'
+              }`}>
+                {modalConfig.title}
+              </h3>
+
+              {/* Message */}
+              <p className="text-gray-300 mb-8 leading-relaxed">
+                {modalConfig.message}
+              </p>
+
+              {/* Buttons */}
+              <div className={`flex gap-3 ${modalConfig.type === 'confirm' ? 'justify-between' : 'justify-center'}`}>
+                {modalConfig.type === 'confirm' ? (
+                  <>
+                    <button
+                      onClick={modalConfig.onCancel}
+                      className="flex-1 px-6 py-3 bg-gray-700 hover:bg-gray-600 text-white font-semibold rounded-lg transition-all"
+                    >
+                      Batal
+                    </button>
+                    <button
+                      onClick={modalConfig.onConfirm}
+                      className="flex-1 px-6 py-3 bg-yellow-500 hover:bg-yellow-600 text-gray-900 font-bold rounded-lg transition-all"
+                    >
+                      Ya, Lanjutkan
+                    </button>
+                  </>
+                ) : (
+                  <button
+                    onClick={modalConfig.onConfirm}
+                    className={`px-8 py-3 font-bold rounded-lg transition-all min-w-[120px] ${
+                      modalConfig.type === 'error' ? 'bg-red-500 hover:bg-red-600 text-white' :
+                      modalConfig.type === 'success' ? 'bg-green-500 hover:bg-green-600 text-white' :
+                      'bg-blue-500 hover:bg-blue-600 text-white'
+                    }`}
+                  >
+                    OK
+                  </button>
+                )}
               </div>
             </div>
           </div>

@@ -12,9 +12,11 @@
     "@fortawesome/fontawesome-svg-core": "^6.5.1",
     "@fortawesome/free-solid-svg-icons": "^6.5.1",
     "@fortawesome/react-fontawesome": "^0.2.2",
+    "canvas-confetti": "^1.9.4",
     "firebase": "^12.6.0",
     "next": "14.0.4",
     "react": "^18.2.0",
+    "react-confetti": "^6.4.0",
     "react-dom": "^18.2.0",
     "react-firebase-hooks": "^5.1.1",
     "socket.io": "^4.6.0",
@@ -23,6 +25,7 @@
     "zustand": "^4.4.7"
   },
   "devDependencies": {
+    "@types/canvas-confetti": "^1.9.0",
     "@types/node": "^20.10.0",
     "@types/react": "^18.2.42",
     "@types/react-dom": "^18.2.17",

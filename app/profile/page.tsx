@@ -130,10 +130,10 @@ export default function ProfilePage() {
         {improvement !== 0 && (
           <div className={`${improvement > 0 ? 'bg-green-900/30 border-green-700' : 'bg-red-900/30 border-red-700'} border rounded-xl p-6 mb-8`}>
             <div className="flex items-center gap-3">
-              <FontAwesomeIcon icon={faFire} className={`${improvement > 0 ? 'text-green-500' : 'text-red-500'} text-3xl`} />
+              <FontAwesomeIcon icon={improvement > 0 ? faFire : faChartLine} className={`${improvement > 0 ? 'text-green-500' : 'text-red-500'} text-3xl`} />
               <div>
                 <div className="text-white font-bold text-lg">
-                  {improvement > 0 ? '🎉 You\'re improving!' : '📉 Keep practicing!'}
+                  {improvement > 0 ? 'You\'re improving!' : 'Keep practicing!'}
                 </div>
                 <div className={`${improvement > 0 ? 'text-green-400' : 'text-red-400'} text-sm`}>
                   {improvement > 0 ? '+' : ''}{improvement} WPM compared to your earlier sessions this {selectedPeriod}

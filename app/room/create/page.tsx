@@ -22,6 +22,14 @@ export default function CreateRoomPage() {
   const [suddenDeathWordCount, setSuddenDeathWordCount] = useState(50);
   const [isCreating, setIsCreating] = useState(false);
   const [languageDropdownOpen, setLanguageDropdownOpen] = useState(false);
+  const [modalConfig, setModalConfig] = useState<{
+    show: boolean;
+    title: string;
+    message: string;
+    type: 'info' | 'error' | 'confirm' | 'success';
+    onConfirm?: () => void;
+    onCancel?: () => void;
+  }>({ show: false, title: '', message: '', type: 'info' });
 
   useEffect(() => {
     if (!user) {
@@ -31,13 +39,27 @@ export default function CreateRoomPage() {
 
   const handleCreateRoom = async () => {
     if (!roomName.trim()) {
-      alert('Nama room harus diisi!');
+      setModalConfig({
+        show: true,
+        title: 'Nama Room Kosong',
+        message: 'Nama room harus diisi!',
+        type: 'error',
+        onConfirm: () => setModalConfig({ ...modalConfig, show: false })
+      });
       return;
     }
 
     if (!user) {
-      alert('Kamu harus login terlebih dahulu!');
-      router.push('/login');
+      setModalConfig({
+        show: true,
+        title: 'Belum Login',
+        message: 'Kamu harus login terlebih dahulu!',
+        type: 'error',
+        onConfirm: () => {
+          setModalConfig({ ...modalConfig, show: false });
+          router.push('/login');
+        }
+      });
       return;
     }
 
@@ -74,7 +96,13 @@ export default function CreateRoomPage() {
       router.push(`/room/${roomCode}?host=true`);
     } catch (error) {
       console.error('Error creating room:', error);
-      alert('Gagal membuat room!');
+      setModalConfig({
+        show: true,
+        title: 'Error',
+        message: 'Gagal membuat room! Silakan coba lagi.',
+        type: 'error',
+        onConfirm: () => setModalConfig({ ...modalConfig, show: false })
+      });
       setIsCreating(false);
     }
   };
@@ -154,7 +182,15 @@ export default function CreateRoomPage() {
                 onClick={() => setLanguageDropdownOpen(!languageDropdownOpen)}
                 className="w-full bg-gradient-to-r from-gray-700 to-gray-800 text-white border-2 border-gray-600 rounded-lg px-4 py-3 pr-10 font-semibold focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 transition-all shadow-lg hover:shadow-xl hover:border-gray-500 cursor-pointer text-left"
               >
-                {language === 'id' ? '🇮🇩 Bahasa Indonesia' : '🇬🇧 English'}
+                {language === 'id' ? (
+                  <span className="flex items-center gap-2">
+                    <FontAwesomeIcon icon={faGlobe} /> Bahasa Indonesia
+                  </span>
+                ) : (
+                  <span className="flex items-center gap-2">
+                    <FontAwesomeIcon icon={faGlobe} /> English
+                  </span>
+                )}
               </button>
               <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-gray-400">
                 <svg className={`w-5 h-5 transition-transform ${languageDropdownOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -175,7 +211,7 @@ export default function CreateRoomPage() {
                         : 'text-gray-300 hover:bg-gray-700'
                     }`}
                   >
-                    🇮🇩 Bahasa Indonesia
+                    <FontAwesomeIcon icon={faGlobe} /> Bahasa Indonesia
                   </button>
                   <button
                     type="button"
@@ -189,7 +225,7 @@ export default function CreateRoomPage() {
                         : 'text-gray-300 hover:bg-gray-700'
                     }`}
                   >
-                    🇬🇧 English
+                    <FontAwesomeIcon icon={faGlobe} /> English
                   </button>
                 </div>
               )}
@@ -314,6 +350,93 @@ export default function CreateRoomPage() {
           </button>
         </div>
       </div>
+
+      {/* Custom Modal */}
+      {modalConfig.show && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
+          <div className="bg-gray-800 rounded-2xl p-8 max-w-md w-full mx-4 border-2 border-gray-700/50 shadow-2xl transform animate-in zoom-in-95 duration-200">
+            <div className="text-center">
+              {/* Icon based on type */}
+              <div className="mb-6">
+                {modalConfig.type === 'error' && (
+                  <div className="w-16 h-16 bg-red-500/20 rounded-full flex items-center justify-center mx-auto">
+                    <svg className="w-8 h-8 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </div>
+                )}
+                {modalConfig.type === 'success' && (
+                  <div className="w-16 h-16 bg-green-500/20 rounded-full flex items-center justify-center mx-auto">
+                    <svg className="w-8 h-8 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                  </div>
+                )}
+                {modalConfig.type === 'confirm' && (
+                  <div className="w-16 h-16 bg-yellow-500/20 rounded-full flex items-center justify-center mx-auto">
+                    <svg className="w-8 h-8 text-yellow-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                    </svg>
+                  </div>
+                )}
+                {modalConfig.type === 'info' && (
+                  <div className="w-16 h-16 bg-blue-500/20 rounded-full flex items-center justify-center mx-auto">
+                    <svg className="w-8 h-8 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                  </div>
+                )}
+              </div>
+
+              {/* Title */}
+              <h3 className={`text-2xl font-bold mb-4 ${
+                modalConfig.type === 'error' ? 'text-red-400' :
+                modalConfig.type === 'success' ? 'text-green-400' :
+                modalConfig.type === 'confirm' ? 'text-yellow-400' :
+                'text-blue-400'
+              }`}>
+                {modalConfig.title}
+              </h3>
+
+              {/* Message */}
+              <p className="text-gray-300 mb-8 leading-relaxed">
+                {modalConfig.message}
+              </p>
+
+              {/* Buttons */}
+              <div className={`flex gap-3 ${modalConfig.type === 'confirm' ? 'justify-between' : 'justify-center'}`}>
+                {modalConfig.type === 'confirm' ? (
+                  <>
+                    <button
+                      onClick={modalConfig.onCancel}
+                      className="flex-1 px-6 py-3 bg-gray-700 hover:bg-gray-600 text-white font-semibold rounded-lg transition-all"
+                    >
+                      Batal
+                    </button>
+                    <button
+                      onClick={modalConfig.onConfirm}
+                      className="flex-1 px-6 py-3 bg-orange-500 hover:bg-orange-600 text-white font-bold rounded-lg transition-all"
+                    >
+                      Ya, Lanjutkan
+                    </button>
+                  </>
+                ) : (
+                  <button
+                    onClick={modalConfig.onConfirm}
+                    className={`px-8 py-3 font-bold rounded-lg transition-all min-w-[120px] ${
+                      modalConfig.type === 'error' ? 'bg-red-500 hover:bg-red-600 text-white' :
+                      modalConfig.type === 'success' ? 'bg-green-500 hover:bg-green-600 text-white' :
+                      'bg-blue-500 hover:bg-blue-600 text-white'
+                    }`}
+                  >
+                    OK
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }
