@@ -295,14 +295,14 @@ export default function PracticePage() {
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    // Shortcut: Tab + Enter untuk restart
-    if (e.key === 'Tab' && e.repeat === false) {
+    // Shortcut: Tab untuk restart
+    if (e.key === 'Tab') {
       e.preventDefault();
       handleRestart();
       return;
     }
 
-    // Shortcut: Enter untuk next test (jika sudah selesai)
+    // Shortcut: Enter untuk next test (hanya jika sudah selesai)
     if (e.key === 'Enter' && isFinished) {
       e.preventDefault();
       handleRestart();
@@ -661,7 +661,7 @@ export default function PracticePage() {
                 Start typing to begin...
               </div>
               <div className="text-xs text-gray-500">
-                <kbd className="px-2 py-1 bg-gray-800 rounded border border-gray-700">Tab + Enter</kbd> to restart
+                Press <kbd className="px-2 py-0.5 bg-gray-800 rounded border border-gray-700 text-gray-400">tab</kbd> to restart
               </div>
             </div>
           )}
@@ -708,22 +708,30 @@ export default function PracticePage() {
         {/* Result */}
         {isFinished && stats && (
           <div className="text-center mb-8">
-            <div className="inline-block bg-gray-800/50 border border-gray-700 rounded-xl p-8">
-              <div className="text-4xl font-bold text-yellow-500 mb-2">
-                {stats.wpm} WPM
+            <div className="inline-block bg-gray-800/50 border border-gray-700 rounded-xl p-8 min-w-[400px]">
+              <div className="text-5xl font-bold text-yellow-500 mb-3">
+                {stats.wpm} <span className="text-2xl text-gray-500">WPM</span>
               </div>
-              <div className="text-gray-400">
-                Akurasi: <span className="text-yellow-500 font-semibold">{stats.accuracy}%</span>
+              <div className="text-lg text-gray-400 mb-6">
+                Accuracy: <span className="text-yellow-500 font-semibold">{stats.accuracy}%</span>
               </div>
-              <div className="mt-4 space-y-2">
+              <div className="space-y-3">
                 <button
                   onClick={handleRestart}
-                  className="w-full px-6 py-2 bg-yellow-500/10 hover:bg-yellow-500/20 text-yellow-500 rounded-lg transition-colors"
+                  className="w-full px-6 py-3 bg-yellow-500 hover:bg-yellow-400 text-gray-900 font-semibold rounded-lg transition-all transform hover:scale-105"
                 >
                   Next Test
                 </button>
-                <div className="text-xs text-gray-500">
-                  Press <kbd className="px-2 py-1 bg-gray-700 rounded">Tab + Enter</kbd> or <kbd className="px-2 py-1 bg-gray-700 rounded">Enter</kbd> to restart
+                <div className="flex items-center justify-center gap-3 text-xs text-gray-500">
+                  <div className="flex items-center gap-1">
+                    <kbd className="px-2 py-1 bg-gray-700/50 rounded border border-gray-600 text-gray-400">Enter</kbd>
+                    <span>next test</span>
+                  </div>
+                  <span>•</span>
+                  <div className="flex items-center gap-1">
+                    <kbd className="px-2 py-1 bg-gray-700/50 rounded border border-gray-600 text-gray-400">Tab</kbd>
+                    <span>restart</span>
+                  </div>
                 </div>
               </div>
             </div>
