@@ -705,24 +705,24 @@ export default function PracticePage() {
           inputMode="text"
         />
 
-        {/* Result */}
+        {/* Result Modal */}
         {isFinished && stats && (
-          <div className="text-center mb-8">
-            <div className="inline-block bg-gray-800/50 border border-gray-700 rounded-xl p-8 min-w-[400px]">
-              <div className="text-5xl font-bold text-yellow-500 mb-3">
-                {stats.wpm} <span className="text-2xl text-gray-500">WPM</span>
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 animate-fadeIn">
+            <div className="bg-gray-800 border-2 border-gray-700 rounded-2xl p-10 min-w-[450px] shadow-2xl transform animate-scaleIn">
+              <div className="text-6xl font-bold text-yellow-500 mb-4 text-center">
+                {stats.wpm} <span className="text-3xl text-gray-400">WPM</span>
               </div>
-              <div className="text-lg text-gray-400 mb-6">
+              <div className="text-xl text-gray-400 mb-8 text-center">
                 Accuracy: <span className="text-yellow-500 font-semibold">{stats.accuracy}%</span>
               </div>
               <div className="space-y-3">
                 <button
                   onClick={handleRestart}
-                  className="w-full px-6 py-3 bg-yellow-500 hover:bg-yellow-400 text-gray-900 font-semibold rounded-lg transition-all transform hover:scale-105"
+                  className="w-full px-6 py-3 bg-yellow-500 hover:bg-yellow-400 text-gray-900 font-bold rounded-lg transition-all transform hover:scale-105"
                 >
                   Next Test
                 </button>
-                <div className="flex items-center justify-center gap-3 text-xs text-gray-500">
+                <div className="flex items-center justify-center gap-3 text-sm text-gray-500">
                   <div className="flex items-center gap-1">
                     <kbd className="px-2 py-1 bg-gray-700/50 rounded border border-gray-600 text-gray-400">Enter</kbd>
                     <span>next test</span>
