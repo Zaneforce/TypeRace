@@ -8,8 +8,11 @@ import { LanguageProvider } from '@/contexts/LanguageContext'
 const inter = Inter({ subsets: ['latin'] })
 
 export const metadata: Metadata = {
-  title: 'TypeRace - Typing Speed Game',
+  title: 'TypeRacer',
   description: 'Belajar dan adu kecepatan mengetik dengan teman-teman',
+  icons: {
+    icon: '/favicon.svg',
+  },
 }
 
 export default function RootLayout({

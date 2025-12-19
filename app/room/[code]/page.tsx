@@ -1269,6 +1269,11 @@ export default function RoomPage({ params }: { params: { code: string } }) {
                     left: '-9999px'
                   }}
                   autoFocus
+                  autoComplete="off"
+                  autoCorrect="off"
+                  autoCapitalize="off"
+                  spellCheck="false"
+                  inputMode="text"
                 />
               </div>
 

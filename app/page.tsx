@@ -95,7 +95,7 @@ export default function Home() {
         {/* App Name */}
         <div className="text-center mb-12">
           <h1 className="text-6xl font-black bg-gradient-to-r from-yellow-500 to-orange-500 bg-clip-text text-transparent">
-            TypeRace
+            TypeRacer
           </h1>
         </div>
 

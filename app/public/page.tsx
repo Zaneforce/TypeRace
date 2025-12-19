@@ -362,6 +362,11 @@ export default function PublicRoomPage() {
                 left: '-9999px'
               }}
               autoFocus
+              autoComplete="off"
+              autoCorrect="off"
+              autoCapitalize="off"
+              spellCheck="false"
+              inputMode="text"
             />
           </div>
 

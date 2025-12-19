@@ -679,6 +679,11 @@ export default function PracticePage() {
           disabled={isFinished}
           className="absolute opacity-0 w-0 h-0"
           autoFocus
+          autoComplete="off"
+          autoCorrect="off"
+          autoCapitalize="off"
+          spellCheck="false"
+          inputMode="text"
         />
 
         {/* Result */}

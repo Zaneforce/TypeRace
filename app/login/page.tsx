@@ -44,7 +44,7 @@ export default function LoginPage() {
     <main className="min-h-screen bg-[#1a1a1a] flex items-center justify-center p-4">
       <div className="bg-gray-800/50 backdrop-blur-md p-8 rounded-2xl border border-gray-700/50 w-full max-w-md">
         <h1 className="text-4xl font-bold text-yellow-500 mb-2 text-center">
-          TypeRace
+          TypeRacer
         </h1>
         <p className="text-gray-400 text-center mb-8">
           {isLogin ? 'Welcome back!' : 'Create your account'}
