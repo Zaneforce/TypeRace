@@ -66,6 +66,28 @@ export default function PracticePage() {
     inputRef.current?.focus();
   }, [setCurrentText, mode, wordLimit, language]);
 
+  // Global keyboard shortcuts
+  useEffect(() => {
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      // Tab untuk restart
+      if (e.key === 'Tab') {
+        e.preventDefault();
+        handleRestart();
+        return;
+      }
+
+      // Enter untuk next test (hanya jika sudah selesai)
+      if (e.key === 'Enter' && isFinished) {
+        e.preventDefault();
+        handleRestart();
+        return;
+      }
+    };
+
+    window.addEventListener('keydown', handleGlobalKeyDown);
+    return () => window.removeEventListener('keydown', handleGlobalKeyDown);
+  }, [isFinished]);
+
   // Save session to Firebase
   const saveSession = async (inputText?: string, textToCompare?: string, sessionStartTime?: number) => {
     if (!user) return;
